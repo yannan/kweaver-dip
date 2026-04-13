@@ -5,11 +5,13 @@ import { createChatRouter } from "./chat";
 
 export {
   appendAttachmentHintsToMessage,
+  buildChatAgentLogContext,
   isChatAgentMessageInputItem,
   readChatAgentAttachments,
   readChatAgentItemText,
   readChatAgentMessage,
-  readChatAgentRequestBody
+  readChatAgentRequestBody,
+  toChatAgentMessagePreview
 } from "./chat";
 
 /**

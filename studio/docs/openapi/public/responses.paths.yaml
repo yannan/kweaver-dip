@@ -83,6 +83,8 @@ paths:
     post:
       operationId: createAgentResponse
       summary: 创建数字员工消息流（含工具调用）
+      description: |
+        服务端会为每次对话输出结构化日志，包含 `agentId`、`sessionKey`、附件数量、消息摘要、每个流式输出分片的文本内容、流式输出统计和耗时，便于排查会话问题。
       parameters:
         - name: x-openclaw-session-key
           in: header

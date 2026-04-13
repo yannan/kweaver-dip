@@ -3,12 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   appendAttachmentHintsToMessage,
+  buildChatAgentLogContext,
   createChatAgentRouter,
   isChatAgentMessageInputItem,
   readChatAgentAttachments,
   readChatAgentItemText,
   readChatAgentMessage,
-  readChatAgentRequestBody
+  readChatAgentRequestBody,
+  toChatAgentMessagePreview
 } from "./chat-agent";
 import {
   HIDDEN_ATTACHMENT_CONTEXT_END,
@@ -151,6 +153,7 @@ describe("readChatAgentRequestBody", () => {
 
 describe("createChatAgentRouter", () => {
   it("proxies the OpenClaw chat agent as SSE", async () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const response = createResponseDouble();
     const next = vi.fn<NextFunction>();
     const createResponseStream = vi.fn().mockResolvedValue({
@@ -247,9 +250,53 @@ describe("createChatAgentRouter", () => {
     );
     expect(response.write).toHaveBeenCalledOnce();
     expect(next).not.toHaveBeenCalled();
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      1,
+      "[chat/agent] request started",
+      {
+        agentId: "agent-1",
+        sessionKey: "agent:agent-1:user:user-1:direct:chat-1",
+        attachmentCount: 1,
+        messageLength: 5,
+        messagePreview: "hello"
+      }
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      2,
+      "[chat/agent] output chunk",
+      expect.objectContaining({
+        agentId: "agent-1",
+        sessionKey: "agent:agent-1:user:user-1:direct:chat-1",
+        attachmentCount: 1,
+        messageLength: 5,
+        messagePreview: "hello",
+        chunkIndex: 0,
+        chunkByteLength: expect.any(Number),
+        chunkText:
+          "event: response.created\ndata: {\"type\":\"response.created\"}\n\n"
+      })
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      3,
+      "[chat/agent] request completed",
+      expect.objectContaining({
+        agentId: "agent-1",
+        sessionKey: "agent:agent-1:user:user-1:direct:chat-1",
+        attachmentCount: 1,
+        messageLength: 5,
+        messagePreview: "hello",
+        statusCode: 200,
+        streamChunkCount: 1
+      })
+    );
+    expect(
+      (infoSpy.mock.calls[2]?.[1] as { streamByteLength: number }).streamByteLength
+    ).toBeGreaterThan(0);
+    infoSpy.mockRestore();
   });
 
   it("forwards validation failures to middleware", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const response = createResponseDouble();
     const next = vi.fn<NextFunction>();
     const router = createChatAgentRouter({
@@ -292,6 +339,47 @@ describe("createChatAgentRouter", () => {
         statusCode: 400,
         message: "Chat agent input must include a user message"
       })
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[chat/agent] request failed",
+      expect.objectContaining({
+        error: "Chat agent input must include a user message"
+      })
+    );
+    errorSpy.mockRestore();
+  });
+});
+
+describe("buildChatAgentLogContext", () => {
+  it("builds structured request diagnostics", () => {
+    expect(
+      buildChatAgentLogContext("agent-1", "agent:agent-1:user:user-1:direct:chat-1", {
+        message: "hello world",
+        attachments: [
+          {
+            type: "input_file",
+            source: {
+              type: "path",
+              path: "tmp/chat-1/a.txt"
+            }
+          }
+        ]
+      })
+    ).toEqual({
+      agentId: "agent-1",
+      sessionKey: "agent:agent-1:user:user-1:direct:chat-1",
+      attachmentCount: 1,
+      messageLength: 11,
+      messagePreview: "hello world"
+    });
+  });
+});
+
+describe("toChatAgentMessagePreview", () => {
+  it("normalizes whitespace and truncates long messages", () => {
+    expect(toChatAgentMessagePreview("  hello   world  ", 20)).toBe("hello world");
+    expect(toChatAgentMessagePreview("abcdefghijklmnopqrstuvwxyz", 10)).toBe(
+      "abcdefghij..."
     );
   });
 });

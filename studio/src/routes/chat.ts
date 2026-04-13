@@ -67,6 +67,69 @@ export interface ChatRouterDependencies {
 }
 
 /**
+ * Structured log context emitted for one `/chat/agent` request.
+ */
+export interface ChatAgentLogContext {
+  /**
+   * Parsed target agent identifier.
+   */
+  agentId: string;
+
+  /**
+   * Upstream OpenClaw session key.
+   */
+  sessionKey: string;
+
+  /**
+   * Count of validated file attachments.
+   */
+  attachmentCount: number;
+
+  /**
+   * Original user message length before hidden attachment hints are appended.
+   */
+  messageLength: number;
+
+  /**
+   * Short user message preview used for diagnostics.
+   */
+  messagePreview: string;
+}
+
+/**
+ * Aggregate stream write stats used for chat-agent completion logs.
+ */
+export interface EventStreamStats {
+  /**
+   * Number of chunks forwarded to the downstream response.
+   */
+  chunkCount: number;
+
+  /**
+   * Total byte length forwarded to the downstream response.
+   */
+  byteLength: number;
+}
+
+/**
+ * Callback invoked whenever one SSE chunk is forwarded downstream.
+ */
+export type EventStreamChunkListener = (
+  /**
+   * Zero-based chunk index.
+   */
+  chunkIndex: number,
+  /**
+   * Raw UTF-8 decoded chunk text.
+   */
+  chunkText: string,
+  /**
+   * Raw chunk byte length.
+   */
+  byteLength: number
+) => void;
+
+/**
  * Builds the router exposing all `/chat/*` HTTP interfaces.
  *
  * @param dependencies Optional chat-related route dependencies.
@@ -140,6 +203,8 @@ export function createChatRouter(
       next: NextFunction
     ): Promise<void> => {
       const abortController = new AbortController();
+      const startedAt = Date.now();
+      let logContext: ChatAgentLogContext | undefined;
 
       attachDownstreamAbortHandlers(request, response, abortController);
 
@@ -147,10 +212,18 @@ export function createChatRouter(
         const requestBody = readChatAgentRequestBody(request.body);
         const sessionKey = readRequiredSessionKeyHeader(request.headers);
         const agentId = readAgentIdFromSessionKey(sessionKey);
+        logContext = buildChatAgentLogContext(
+          agentId,
+          sessionKey,
+          requestBody
+        );
         const message = appendAttachmentHintsToMessage(
           requestBody.message,
           requestBody.attachments
         );
+
+        console.info("[chat/agent] request started", logContext);
+
         const upstreamResponse = await chatAgentClient.createResponseStream(
           {
             sessionKey,
@@ -163,16 +236,50 @@ export function createChatRouter(
         );
 
         writeEventStreamHeaders(response, upstreamResponse.status, upstreamResponse.headers);
-        await pipeEventStream(upstreamResponse.body, response);
+        const streamStats = await pipeEventStream(
+          upstreamResponse.body,
+          response,
+          (chunkIndex, chunkText, byteLength) => {
+            console.info("[chat/agent] output chunk", {
+              ...logContext,
+              chunkIndex,
+              chunkByteLength: byteLength,
+              chunkText
+            });
+          }
+        );
+
+        console.info("[chat/agent] request completed", {
+          ...logContext,
+          statusCode: upstreamResponse.status,
+          durationMs: Date.now() - startedAt,
+          streamChunkCount: streamStats.chunkCount,
+          streamByteLength: streamStats.byteLength
+        });
       } catch (error) {
         if (abortController.signal.aborted || response.destroyed) {
+          console.warn("[chat/agent] request aborted", {
+            ...logContext,
+            durationMs: Date.now() - startedAt
+          });
           return;
         }
 
         if (response.headersSent) {
+          console.error("[chat/agent] stream failed after headers sent", {
+            ...logContext,
+            durationMs: Date.now() - startedAt,
+            error: error instanceof Error ? error.message : String(error)
+          });
           response.end();
           return;
         }
+
+        console.error("[chat/agent] request failed", {
+          ...logContext,
+          durationMs: Date.now() - startedAt,
+          error: error instanceof Error ? error.message : String(error)
+        });
 
         next(
           error instanceof HttpError
@@ -383,9 +490,13 @@ export function attachDownstreamAbortHandlers(
  */
 export async function pipeEventStream(
   stream: ReadableStream<Uint8Array>,
-  response: Response
-): Promise<void> {
+  response: Response,
+  onChunk?: EventStreamChunkListener
+): Promise<EventStreamStats> {
   const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let chunkCount = 0;
+  let byteLength = 0;
 
   try {
     while (true) {
@@ -396,13 +507,27 @@ export async function pipeEventStream(
       }
 
       if (value !== undefined) {
+        chunkCount += 1;
+        byteLength += value.byteLength;
+        onChunk?.(chunkCount - 1, decoder.decode(value, { stream: true }), value.byteLength);
         response.write(Buffer.from(value));
       }
     }
   } finally {
+    const trailingText = decoder.decode();
+
+    if (trailingText !== "") {
+      onChunk?.(chunkCount, trailingText, 0);
+    }
+
     reader.releaseLock();
     response.end();
   }
+
+  return {
+    chunkCount,
+    byteLength
+  };
 }
 
 /**
@@ -615,4 +740,46 @@ export function parseOptionalNonNegativeIntegerString(
   }
 
   return Number(rawValue);
+}
+
+/**
+ * Builds one structured log context for a chat-agent request.
+ *
+ * @param agentId The parsed target agent identifier.
+ * @param sessionKey The normalized OpenClaw session key.
+ * @param requestBody The validated chat-agent request body.
+ * @returns The structured log payload.
+ */
+export function buildChatAgentLogContext(
+  agentId: string,
+  sessionKey: string,
+  requestBody: NormalizedChatAgentRequest
+): ChatAgentLogContext {
+  return {
+    agentId,
+    sessionKey,
+    attachmentCount: requestBody.attachments?.length ?? 0,
+    messageLength: requestBody.message.length,
+    messagePreview: toChatAgentMessagePreview(requestBody.message)
+  };
+}
+
+/**
+ * Shortens one chat message so logs contain useful context without dumping full content.
+ *
+ * @param message The normalized user message.
+ * @param maxLength Maximum preview length.
+ * @returns The single-line shortened message preview.
+ */
+export function toChatAgentMessagePreview(
+  message: string,
+  maxLength: number = 200
+): string {
+  const normalized = message.replace(/\s+/gu, " ").trim();
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength)}...`;
 }
