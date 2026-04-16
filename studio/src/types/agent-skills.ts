@@ -64,6 +64,21 @@ export interface InstallSkillResult {
 }
 
 /**
+ * Optional parameters accepted by the skill install flow.
+ */
+export interface InstallSkillOptions {
+  /**
+   * Whether an existing target skill directory may be replaced.
+   */
+  overwrite?: boolean;
+
+  /**
+   * Explicit skill id used instead of inferring it from the uploaded filename.
+   */
+  name?: string;
+}
+
+/**
  * Response returned after uninstalling a skill via the DIP Gateway route.
  */
 export interface UninstallSkillResult {

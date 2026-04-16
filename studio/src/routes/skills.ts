@@ -16,6 +16,7 @@ import {
   matchesSkillEntry
 } from "../logic/agent-skills";
 import { deriveSkillIdFromUploadedFilename, isValidSkillSlug } from "../utils/skills";
+import type { InstallSkillOptions } from "../types/agent-skills";
 import type { OpenClawSkillStatusEntry } from "../types/openclaw";
 
 /** Maximum `.skill` upload size for Studio install route (bytes). */
@@ -96,44 +97,66 @@ function resolveIdParam(idParam: string | string[] | undefined): string {
 }
 
 /**
- * Reads `overwrite` from multipart text fields (`req.body` after multer).
+ * Parses one boolean install option from form/query input.
  *
- * @param body Parsed `multipart/form-data` fields.
- * @returns Whether the client requested overwrite of an existing skill directory.
+ * @param raw Raw incoming field value.
+ * @returns Parsed boolean, or `undefined` when the value is unsupported.
  */
-function parseOverwriteFromMultipartBody(body: Request["body"]): boolean {
-  const raw = body?.overwrite as unknown;
+function parseBooleanInstallOption(
+  raw: unknown
+): boolean | undefined {
   if (typeof raw === "boolean") {
     return raw;
   }
   if (typeof raw === "string") {
     const v = raw.trim().toLowerCase();
-    return v === "true" || v === "1";
+    if (v === "true" || v === "1") {
+      return true;
+    }
+    if (v === "false" || v === "0") {
+      return false;
+    }
+    return undefined;
   }
   if (Array.isArray(raw) && raw.length > 0) {
-    const v = String(raw[0]).trim().toLowerCase();
-    return v === "true" || v === "1";
+    return parseBooleanInstallOption(raw[0]);
   }
-  return false;
+  return undefined;
 }
 
 /**
- * Reads optional `name` from multipart fields (overrides filename-derived default).
+ * Reads `overwrite` from multipart text fields or query parameters.
  *
- * @param body Parsed `multipart/form-data` fields.
- * @returns Trimmed skill id, or `undefined` when absent or empty.
+ * @param request Incoming install request.
+ * @returns Whether the client requested overwrite of an existing skill directory.
  */
-function parseSkillSlugFromMultipartBody(body: Request["body"]): string | undefined {
-  const raw = (body?.skillName ?? body?.name) as unknown;
-  if (typeof raw === "string") {
-    const t = raw.trim();
-    return t.length > 0 ? t : undefined;
-  }
-  if (Array.isArray(raw) && raw.length > 0) {
-    const t = String(raw[0]).trim();
-    return t.length > 0 ? t : undefined;
-  }
-  return undefined;
+function parseOverwriteFromInstallRequest(request: Request): boolean {
+  const raw =
+    request.body?.overwrite ??
+    request.query?.overwrite;
+
+  const parsed = parseBooleanInstallOption(raw);
+  return parsed ?? false;
+}
+
+/**
+ * Resolves the install options accepted by the route.
+ *
+ * @param request Incoming install request.
+ * @param uploadedFileName Original uploaded filename.
+ * @returns Normalized upstream install options.
+ */
+function resolveSkillInstallOptions(
+  request: Request,
+  uploadedFileName: string
+): InstallSkillOptions {
+  const overwrite = parseOverwriteFromInstallRequest(request);
+  const slug = deriveSkillIdFromUploadedFilename(uploadedFileName);
+
+  return {
+    ...(overwrite ? { overwrite: true } : {}),
+    ...(slug !== undefined ? { name: slug } : {})
+  };
 }
 
 function parseSkillFilePathQuery(query: Request["query"]): string {
@@ -313,8 +336,6 @@ export function createSkillsRouter(): Router {
       next: NextFunction
     ): Promise<void> => {
       try {
-        const overwrite = parseOverwriteFromMultipartBody(request.body);
-
         const file = request.file;
         if (file === undefined || file.buffer.length === 0) {
           throw new HttpError(
@@ -323,14 +344,8 @@ export function createSkillsRouter(): Router {
           );
         }
 
-        const explicitSlug = parseSkillSlugFromMultipartBody(request.body);
-        const slug =
-          explicitSlug ?? deriveSkillIdFromUploadedFilename(file.originalname);
-
-        const result = await agentSkillsLogic.installSkill(file.buffer, {
-          ...(overwrite ? { overwrite: true } : {}),
-          ...(slug !== undefined ? { name: slug } : {})
-        });
+        const installOptions = resolveSkillInstallOptions(request, file.originalname);
+        const result = await agentSkillsLogic.installSkill(file.buffer, installOptions);
 
         const slugResult = result.name;
         let displayName = result.displayName ?? slugResult;

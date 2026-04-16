@@ -9,6 +9,7 @@ import type {
 import type {
   AgentSkillsBinding,
   AgentSkillsCatalog,
+  InstallSkillOptions,
   InstallSkillResult,
   SkillContentResult,
   SkillTreeResult,
@@ -78,7 +79,7 @@ export interface AgentSkillsLogic {
    */
   installSkill(
     zipBody: Buffer,
-    options?: { overwrite?: boolean; name?: string }
+    options?: InstallSkillOptions
   ): Promise<InstallSkillResult>;
 
   /**
@@ -221,7 +222,7 @@ export class DefaultAgentSkillsLogic implements AgentSkillsLogic {
    */
   public async installSkill(
     zipBody: Buffer,
-    options?: { overwrite?: boolean; name?: string }
+    options?: InstallSkillOptions
   ): Promise<InstallSkillResult> {
     return this.client.installSkill(zipBody, options);
   }

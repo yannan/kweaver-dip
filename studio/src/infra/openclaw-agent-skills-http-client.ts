@@ -2,6 +2,7 @@ import { HttpError } from "../errors/http-error";
 import type {
   AgentSkillsBinding,
   AgentSkillsCatalog,
+  InstallSkillOptions,
   InstallSkillResult,
   SkillContentResult,
   SkillTreeResult,
@@ -77,11 +78,11 @@ export interface OpenClawAgentSkillsHttpClient {
    * Installs a `.skill` zip by POSTing raw bytes to the DIP Gateway install route.
    *
    * @param zipBody Raw zip bytes (same format as a `.skill` file).
-   * @param options When `overwrite` is true, replaces an existing skill directory.
+   * @param options Optional install parameters forwarded to the upstream route.
    */
   installSkill(
     zipBody: Buffer | Uint8Array,
-    options?: { overwrite?: boolean; name?: string }
+    options?: InstallSkillOptions
   ): Promise<InstallSkillResult>;
 
   /**
@@ -222,19 +223,19 @@ implements OpenClawAgentSkillsHttpClient {
    * Installs a `.skill` archive through the Gateway plugin HTTP route.
    *
    * @param zipBody Raw zip bytes.
-   * @param options Optional overwrite flag forwarded as `?overwrite=true`.
+   * @param options Optional install parameters forwarded as query params and multipart fields.
    * @returns Parsed install payload from the plugin.
    */
   public async installSkill(
     zipBody: Buffer | Uint8Array,
-    options?: { overwrite?: boolean; name?: string }
+    options?: InstallSkillOptions
   ): Promise<InstallSkillResult> {
     const response = await this.fetchImpl(
       buildOpenClawSkillInstallUrl(this.options.gatewayUrl, options),
       {
         method: "POST",
         headers: createOpenClawSkillInstallHeaders(this.options.token),
-        body: createOpenClawSkillInstallFormData(zipBody, options?.name)
+        body: createOpenClawSkillInstallFormData(zipBody, options)
       }
     ).catch((error: unknown) => {
       throw normalizeOpenClawSkillInstallError(error);
@@ -400,7 +401,7 @@ export function buildOpenClawAgentSkillsUrl(
  */
 export function buildOpenClawSkillInstallUrl(
   gatewayUrl: string,
-  options?: { overwrite?: boolean; name?: string }
+  options?: InstallSkillOptions
 ): string {
   const url = new URL(gatewayUrl);
 
@@ -597,17 +598,21 @@ export function createOpenClawSkillInstallHeaders(token?: string): Headers {
  * Creates the multipart request body expected by the skill install route.
  *
  * @param zipBody Raw `.skill` zip bytes.
- * @param name Optional skill slug used to derive a stable filename.
- * @returns Multipart form data containing the `file` field.
+ * @param options Optional install parameters forwarded alongside the file.
+ * @returns Multipart form data containing the `file` field and optional overwrite flag.
  */
 export function createOpenClawSkillInstallFormData(
   zipBody: Buffer | Uint8Array,
-  name?: string
+  options?: InstallSkillOptions
 ): FormData {
   const form = new FormData();
+  const trimmedName =
+    typeof options?.name === "string" && options.name.trim().length > 0
+      ? options.name.trim()
+      : undefined;
   const fileName =
-    typeof name === "string" && name.trim().length > 0
-      ? `${name.trim()}.skill`
+    trimmedName !== undefined
+      ? `${trimmedName}.skill`
       : "skill.skill";
 
   form.append(
@@ -615,6 +620,10 @@ export function createOpenClawSkillInstallFormData(
     new Blob([new Uint8Array(zipBody)], { type: "application/zip" }),
     fileName
   );
+
+  if (options?.overwrite === true) {
+    form.append("overwrite", "true");
+  }
 
   return form;
 }

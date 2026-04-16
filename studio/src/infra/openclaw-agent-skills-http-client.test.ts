@@ -142,13 +142,18 @@ describe("createOpenClawAgentSkillsHeaders", () => {
 });
 
 describe("createOpenClawSkillInstallFormData", () => {
-  it("creates multipart form data with a file field", async () => {
-    const body = createOpenClawSkillInstallFormData(Buffer.from([0x50, 0x4b]), "weather");
+  it("creates multipart form data with file and optional overwrite field", async () => {
+    const body = createOpenClawSkillInstallFormData(Buffer.from([0x50, 0x4b]), {
+      overwrite: true,
+      name: "weather"
+    });
     const file = body.get("file");
 
     expect(file).toBeInstanceOf(File);
     expect((file as File).name).toBe("weather.skill");
     expect(Buffer.from(await (file as File).arrayBuffer())).toEqual(Buffer.from([0x50, 0x4b]));
+    expect(body.get("overwrite")).toBe("true");
+    expect(body.get("skillName")).toBeNull();
   });
 });
 
@@ -563,19 +568,23 @@ describe("DefaultOpenClawAgentSkillsHttpClient", () => {
       fetchImpl
     );
 
-    await expect(client.installSkill(zipBody, { overwrite: true })).resolves.toEqual({
+    await expect(
+      client.installSkill(zipBody, { overwrite: true, name: "weather" })
+    ).resolves.toEqual({
       name: "weather",
       skillPath: "/data/skills/weather"
     });
 
     expect(fetchImpl.mock.calls[0]?.[0]).toBe(
-      "http://127.0.0.1:19001/v1/config/agents/skills/install?overwrite=true"
+      "http://127.0.0.1:19001/v1/config/agents/skills/install?overwrite=true&name=weather"
     );
     expect(fetchImpl.mock.calls[0]?.[1]?.method).toBe("POST");
     expect(fetchImpl.mock.calls[0]?.[1]?.body).toBeInstanceOf(FormData);
     const file = (fetchImpl.mock.calls[0]?.[1]?.body as FormData).get("file");
     expect(file).toBeInstanceOf(File);
-    expect((file as File).name).toBe("skill.skill");
+    expect((file as File).name).toBe("weather.skill");
+    expect((fetchImpl.mock.calls[0]?.[1]?.body as FormData).get("overwrite")).toBe("true");
+    expect((fetchImpl.mock.calls[0]?.[1]?.body as FormData).get("skillName")).toBeNull();
   });
 
   it("uninstalls a skill via DELETE", async () => {

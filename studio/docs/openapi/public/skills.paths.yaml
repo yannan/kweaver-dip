@@ -55,12 +55,19 @@ paths:
       description: |
         使用 `multipart/form-data`：字段 **`file`** 为 **ZIP** 包（PK zip；`.skill` 与 `.zip` 扩展名均可，内容格式相同）。
         `Content-Type` 不强制；常见 `application/zip`、`application/octet-stream`。
-        可选 **`overwrite`** 为 `true` 或 `1` 时若目标技能目录已存在则覆盖；
-        可选 **`skillName`**（技能名称）；不传时按上传文件名（basename、去 `.skill`/`.zip` 后缀）推导为目录名。
-        `SKILL.md` 必须包含 front matter 元数据头，且其中的 `name` 必须与 `skillName`/目录名完全一致。
-        扁平包（根含 **`SKILL.md`**）时若无法从文件名得到合法名称，须显式传 **`skillName`**。
-        Studio 将文件读入内存后转发至 OpenClaw 网关 `dip` 插件 `POST /v1/config/agents/skills/install`（`name` 以查询参数传递）。
+        可选 **`overwrite`** 为 `true` 或 `1` 时若目标技能目录已存在则覆盖。
+        技能名称始终按上传文件名（basename、去 `.skill`/`.zip` 后缀）推导为目录名；不再支持通过请求参数显式指定。
+        `SKILL.md` 必须包含 front matter 元数据头，且其中的 `name` 必须与最终目录名完全一致。
+        `overwrite` 优先从 multipart 字段读取；为兼容历史调用，也接受同名 query 参数。
+        Studio 将文件读入内存后转发至 OpenClaw 网关 `dip` 插件 `POST /v1/config/agents/skills/install`。
         单文件大小上限 32MB。
+      parameters:
+        - name: overwrite
+          in: query
+          required: false
+          description: 兼容历史调用；为 `true` 或 `1` 时覆盖已存在的技能目录
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -77,9 +84,6 @@ paths:
                 overwrite:
                   type: string
                   description: 为 `true` 或 `1` 时覆盖已存在的技能目录
-                skillName:
-                  type: string
-                  description: 技能名称；不传则使用上传文件名推导（需符合命名规则）
       responses:
         "200":
           description: 安装成功

@@ -73,12 +73,14 @@ function findHandler(
  *
  * @param buffer Zip file bytes (or empty).
  * @param body Parsed multipart text fields (e.g. `overwrite`).
+ * @param query Parsed query string values.
  * @param originalname Optional upload filename (`multer`); default yields no derived skill id.
  * @returns A minimal Express request double.
  */
 function createMultipartSkillRequest(
   buffer: Buffer,
   body: Record<string, unknown> = {},
+  query: Record<string, unknown> = {},
   originalname = ""
 ): Request {
   const file: Express.Multer.File = {
@@ -93,7 +95,7 @@ function createMultipartSkillRequest(
     path: "",
     stream: null as never
   };
-  return { file, body, query: {} } as unknown as Request;
+  return { file, body, query } as unknown as Request;
 }
 
 /**
@@ -937,34 +939,7 @@ describe("createSkillsRouter", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it("forwards optional name for flat-layout installs", async () => {
-    const installSkill = vi.fn().mockResolvedValue({
-      name: "my-skill",
-      skillPath: "/repo/skills/my-skill",
-      displayName: "Custom Skill"
-    });
-    const listEnabledSkillsByQuery = vi.fn();
-    const { createSkillsRouter } = await importRouterWithLogicMock({
-      listEnabledSkills: async () => [],
-      installSkill,
-      listEnabledSkillsByQuery
-    });
-    const router = createSkillsRouter() as Router;
-    const handler = findHandler(router, "post", skillsInstallPath);
-    const response = createResponseDouble();
-    const next = vi.fn<NextFunction>();
-    const zip = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
-
-    await handler?.(
-      createMultipartSkillRequest(zip, { skillName: "my-skill" }),
-      response,
-      next
-    );
-
-    expect(installSkill).toHaveBeenCalledWith(zip, { name: "my-skill" });
-  });
-
-  it("accepts array multipart fields for overwrite and name", async () => {
+  it("accepts array multipart fields for overwrite", async () => {
     const installSkill = vi.fn().mockResolvedValue({
       name: "my-skill",
       skillPath: "/repo/skills/my-skill",
@@ -980,16 +955,14 @@ describe("createSkillsRouter", () => {
 
     await handler?.(
       createMultipartSkillRequest(zip, {
-        overwrite: ["1"],
-        name: [" my-skill "]
+        overwrite: ["1"]
       }),
       createResponseDouble(),
       vi.fn<NextFunction>()
     );
 
     expect(installSkill).toHaveBeenCalledWith(zip, {
-      overwrite: true,
-      name: "my-skill"
+      overwrite: true
     });
   });
 
@@ -1012,7 +985,7 @@ describe("createSkillsRouter", () => {
     const zip = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 
     await handler?.(
-      createMultipartSkillRequest(zip, {}, "weather.skill"),
+      createMultipartSkillRequest(zip, {}, {}, "weather.skill"),
       response,
       next
     );

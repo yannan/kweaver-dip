@@ -564,7 +564,7 @@ DIP 数字员工 Web 界面
 
 `POST /api/dip-studio/v1/skills/install`
 
-使用 **`multipart/form-data`**。服务端将 zip 读入内存后转发至 OpenClaw 网关 `dip` 插件（`name`、`overwrite` 作为上游查询参数），详见插件 README。单文件大小上限 **32MB**。
+使用 **`multipart/form-data`**。服务端将 zip 读入内存后转发至 OpenClaw 网关 `dip` 插件；仅支持 `overwrite` 参数，且优先从 multipart 字段读取，同时兼容同名 query 参数。技能名称始终按上传文件名推导。单文件大小上限 **32MB**。
 
 **支持的文件类型**
 
@@ -578,11 +578,14 @@ DIP 数字员工 Web 界面
 | -- | -- | -- | -- |
 | file | binary | 是 | 上述 ZIP 包的字节内容（字段名固定为 `file`） |
 | overwrite | string | 否 | 为 `true` 或 `1` 时，若 `skills/<name>/` 已存在则覆盖 |
-| skillName | string | 否 | 技能名称。不传则按**上传文件名**推导（basename，去 `.skill`/`.zip` 后缀，须符合命名规则）。扁平包（zip 根含 `SKILL.md`）时用该名作为 `skills/<name>/` |
 
-前端示例：`form.append("file", fileBlob, "my-skill.skill")`（可用文件名代替显式 `skillName`）；覆盖时 `form.append("overwrite", "true")`；覆盖默认推导 id 时 `form.append("skillName", "other-id")`。
+技能名称按**上传文件名**推导（basename，去 `.skill`/`.zip` 后缀，须符合命名规则）。
 
-> ⚠️ `SKILL.md` 必须包含 front matter 元数据头，其中 `name` 字段必须与 `skillName`/目录名完全一致，否则安装会被拒绝。
+前端示例：`form.append("file", fileBlob, "my-skill.skill")`；覆盖时 `form.append("overwrite", "true")`。
+
+兼容历史调用时，也可通过 query 传入：`POST /api/dip-studio/v1/skills/install?overwrite=true`。
+
+> ⚠️ `SKILL.md` 必须包含 front matter 元数据头，其中 `name` 字段必须与上传文件名推导出的目录名完全一致，否则安装会被拒绝。
 
 响应：`200 application/json`
 
