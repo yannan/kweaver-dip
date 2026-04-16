@@ -28,7 +28,8 @@ else
     exit 1
   fi
   BRANCH_OR_REF="${GITHUB_REF_NAME//\//-}"
-  RELEASE_TAG="${STUDIO_VERSION}-${BRANCH_OR_REF}-${SHORT_SHA}"
+  # e.g. 0.5.0-main.22fefcd (VERSION-branch.shortSha)
+  RELEASE_TAG="${STUDIO_VERSION}-${BRANCH_OR_REF}.${SHORT_SHA}"
   RELEASE_TAG_NO_SHA="${STUDIO_VERSION}-${BRANCH_OR_REF}"
 fi
 
