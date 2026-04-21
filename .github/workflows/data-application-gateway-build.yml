@@ -1,4 +1,4 @@
-name: Build And Push data-application-gateway
+name: data-application-gateway-build
 
 on:
   push:

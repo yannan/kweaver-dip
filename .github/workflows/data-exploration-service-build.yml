@@ -1,4 +1,4 @@
-name: Build And Push data-exploration-service
+name: data-exploration-service-build
 
 on:
   push:

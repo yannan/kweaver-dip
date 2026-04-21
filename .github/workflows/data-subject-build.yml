@@ -1,4 +1,4 @@
-name: Build And Push data-subject
+name: data-subject-build
 
 on:
   push:

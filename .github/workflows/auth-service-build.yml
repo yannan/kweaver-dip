@@ -1,4 +1,4 @@
-name: Build And Push auth-service
+name: auth-service-build
 
 on:
   push:

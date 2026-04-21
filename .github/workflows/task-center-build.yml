@@ -1,4 +1,4 @@
-name: Build And Push task-center
+name: task-center-build
 
 on:
   push:

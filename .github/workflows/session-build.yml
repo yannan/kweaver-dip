@@ -1,4 +1,4 @@
-name: Build And Push session
+name: session-build
 
 on:
   push:

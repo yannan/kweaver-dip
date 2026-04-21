@@ -1,4 +1,4 @@
-name: Build And Push sailor-service
+name: sailor-service-build
 
 on:
   push:

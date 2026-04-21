@@ -1,4 +1,4 @@
-name: Build And Push configuration-center
+name: configuration-center-build
 
 on:
   push:

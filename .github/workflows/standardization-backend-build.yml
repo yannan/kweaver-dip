@@ -1,4 +1,4 @@
-name: Build And Push standardization-backend
+name: standardization-backend-build
 
 on:
   push:

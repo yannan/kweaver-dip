@@ -1,4 +1,4 @@
-name: Build And Push anyfabric-frontend
+name: frontend-build
 
 on:
   push:

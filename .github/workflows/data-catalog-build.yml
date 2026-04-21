@@ -1,4 +1,4 @@
-name: Build And Push data-catalog
+name: data-catalog-build
 
 on:
   push:

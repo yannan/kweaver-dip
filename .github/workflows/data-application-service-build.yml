@@ -1,4 +1,4 @@
-name: Build And Push data-application-service
+name: data-application-service-build
 
 on:
   push:
