@@ -1,34 +1,48 @@
-name: Build And Push auth-service
+name: Reusable - Build And Push Service
 
 on:
-  push:
-    branches:
-      - "**"
-    tags:
-      - "v*"
-    paths:
-      - "dsg/services/apps/auth-service/**"
-      - ".github/workflows/auth-service-build-and-push.yml"
-  pull_request:
-    branches:
-      - "**"
-    paths:
-      - "dsg/services/apps/auth-service/**"
-      - ".github/workflows/auth-service-build-and-push.yml"
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      push_latest:
-        description: "Whether to also publish the latest tag"
+      service_name:
+        description: "Service name (used for job names, chart name, cache scope)"
+        required: true
+        type: string
+      image_name:
+        description: "Image name under IMAGE_NAMESPACE, e.g. af/auth-service"
+        required: true
+        type: string
+      chart_dir:
+        description: "Path to helm chart directory"
+        required: true
+        type: string
+      dockerfile:
+        description: "Path to Dockerfile"
+        required: true
+        type: string
+      build_context:
+        description: "Docker build context (defaults to 'dsg' monorepo root)"
         required: false
+        type: string
+        default: "dsg"
+      image_repository:
+        description: "Full repository value for Helm values.yaml (e.g. kweaver-ai/af/auth-service). Defaults to IMAGE_NAMESPACE/image_name."
+        required: false
+        type: string
+        default: ""
+      chart_name:
+        description: "Helm chart name (defaults to service_name)"
+        required: false
+        type: string
+        default: ""
+      push_latest:
+        description: "Publish latest tag (in addition to branch detection)"
+        required: false
+        type: string
         default: "false"
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAMESPACE: kweaver-ai/af
-  SERVICE_NAME: auth-service
-  SERVICE_DIR: dsg/services/apps/auth-service
-  CHART_DIR: dsg/services/apps/auth-service/helm/auth-service
-  DOCKERFILE: dsg/services/apps/auth-service/docker/Dockerfile
+  IMAGE_NAMESPACE: kweaver-ai
 
 jobs:
   release-version:
@@ -48,13 +62,13 @@ jobs:
       - name: Compute release version
         id: version
         env:
-          WORKFLOW_PUSH_LATEST: ${{ inputs.push_latest || 'false' }}
+          CHART_DIR: ${{ inputs.chart_dir }}
+          WORKFLOW_PUSH_LATEST: ${{ inputs.push_latest }}
         run: |
           set -euo pipefail
           SHORT_SHA="$(git rev-parse --short HEAD)"
           SHOULD_PUSH_LATEST="false"
 
-          # Read chart version as the base semver
           CHART_VERSION="$(
             grep -m1 -E '^version:' "${CHART_DIR}/Chart.yaml" \
               | awk '{print $2}' | tr -d '"' | tr -d "'" | tr -d '\r'
@@ -114,7 +128,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ env.SERVICE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.image_name }}
           tags: |
             type=raw,value=${{ needs.release-version.outputs.release_tag }}
             type=raw,value=${{ needs.release-version.outputs.release_tag_no_sha }}
@@ -123,8 +137,8 @@ jobs:
       - name: Build (PR) / Build & Push (branch)
         uses: docker/build-push-action@v6
         with:
-          context: dsg
-          file: ${{ env.DOCKERFILE }}
+          context: ${{ inputs.build_context }}
+          file: ${{ inputs.dockerfile }}
           platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
           push: ${{ github.event_name != 'pull_request' }}
           provenance: false
@@ -134,8 +148,8 @@ jobs:
           build-args: |
             SERVER_VERSION=${{ needs.release-version.outputs.release_tag_no_sha }}
             GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
-          cache-from: type=gha,scope=auth-service
-          cache-to: type=gha,mode=max,scope=auth-service
+          cache-from: type=gha,scope=${{ inputs.service_name }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}
 
   helm-chart:
     if: github.event_name != 'pull_request'
@@ -158,6 +172,9 @@ jobs:
       - name: Align chart version, appVersion and image fields
         env:
           RELEASE_TAG: ${{ needs.release-version.outputs.release_tag }}
+          CHART_DIR: ${{ inputs.chart_dir }}
+          IMAGE_REPOSITORY_OVERRIDE: ${{ inputs.image_repository }}
+          IMAGE_NAME: ${{ inputs.image_name }}
         run: |
           python3 <<'PY'
           import os, re
@@ -165,6 +182,8 @@ jobs:
 
           tag = os.environ["RELEASE_TAG"]
           chart_dir = Path(os.environ["CHART_DIR"])
+          override = os.environ.get("IMAGE_REPOSITORY_OVERRIDE", "").strip()
+          repo = override or f"kweaver-ai/{os.environ['IMAGE_NAME']}"
 
           chart = chart_dir / "Chart.yaml"
           text = chart.read_text(encoding="utf-8")
@@ -174,19 +193,26 @@ jobs:
 
           values = chart_dir / "values.yaml"
           vt = values.read_text(encoding="utf-8")
-          vt = re.sub(r"(?m)^(\s*registry:\s*).*$",   r'\1ghcr.io',                 vt, count=1)
-          vt = re.sub(r"(?m)^(\s*repository:\s*).*$", r'\1kweaver-ai/af/auth-service', vt, count=1)
-          vt = re.sub(r"(?m)^(\s*tag:\s*).*$",        rf'\1"{tag}"',                vt, count=1)
+          vt = re.sub(r"(?m)^(\s*registry:\s*).*$",   r'\1ghcr.io',     vt, count=1)
+          vt = re.sub(r"(?m)^(\s*repository:\s*).*$", rf'\1{repo}',     vt, count=1)
+          vt = re.sub(r"(?m)^(\s*tag:\s*).*$",        rf'\1"{tag}"',    vt, count=1)
           values.write_text(vt, encoding="utf-8")
           PY
 
       - name: Lint Helm Chart
+        env:
+          CHART_DIR: ${{ inputs.chart_dir }}
         run: helm lint "${CHART_DIR}"
 
       - name: Render Helm Chart (default values)
-        run: helm template auth-service "${CHART_DIR}" > /dev/null
+        env:
+          CHART_DIR: ${{ inputs.chart_dir }}
+          CHART_NAME: ${{ inputs.chart_name != '' && inputs.chart_name || inputs.service_name }}
+        run: helm template "${CHART_NAME}" "${CHART_DIR}" > /dev/null
 
       - name: Package Helm Chart
+        env:
+          CHART_DIR: ${{ inputs.chart_dir }}
         run: |
           mkdir -p dist-chart
           helm package "${CHART_DIR}" --destination dist-chart
@@ -207,6 +233,6 @@ jobs:
       - name: Upload Chart Package (artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: auth-service-chart
+          name: ${{ inputs.service_name }}-chart
           path: dist-chart/*.tgz
           if-no-files-found: error

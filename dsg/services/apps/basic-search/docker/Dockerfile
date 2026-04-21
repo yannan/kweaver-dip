@@ -12,9 +12,15 @@ COPY services/apps/basic-search/go.mod services/apps/basic-search/go.sum ./
 # 下载依赖
 ARG GOPROXY_URL="http://goproxy.cn,direct"
 ARG GOPRIVATE="github.com/kweaver-ai/*"
+ARG GIT_AUTH_TOKEN
 
 ENV GOPROXY=${GOPROXY_URL} \
     GOPRIVATE=${GOPRIVATE}
+
+# Configure git credentials for private Go modules
+RUN if [ -n "${GIT_AUTH_TOKEN}" ]; then \
+      git config --global url."https://x-access-token:${GIT_AUTH_TOKEN}@github.com/".insteadOf "https://github.com/"; \
+    fi
 
 RUN go mod download
 
