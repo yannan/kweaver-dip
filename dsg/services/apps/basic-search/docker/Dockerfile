@@ -25,7 +25,7 @@ RUN if [ -n "${GIT_AUTH_TOKEN}" ]; then \
 RUN go mod download
 
 # 安装构建工具
-RUN go install github.com/google/wire/cmd/wire@v0.5.0
+RUN go install github.com/google/wire/cmd/wire@v0.7.0
 
 # 复制源代码（注意：构建上下文是项目根目录，需要复制服务目录）
 COPY services/apps/basic-search/ ./
