@@ -116,6 +116,38 @@ func (a *auth) CurrentUserEnforce(ctx context.Context, req *dto.CurrentUserEnfor
 	return result.Result, nil
 }
 
+// CurrentUserBatchEnforce 当前用户的批量策略验证
+func (a *auth) CurrentUserBatchEnforce(ctx context.Context, req *dto.CurrentUserBatchEnforce) ([]bool, error) {
+	userInfo, err := gutil.GetUserInfo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	arg := &authorization.ResourceFilterArgs{
+		AllowOperation: true,
+		Accessor: authorization.Accessor{
+			ID:   userInfo.ID,
+			Type: dto.SubjectUser.String(),
+		},
+		Resources: req.ResourceObjects(),
+		Operation: req.Action,
+		Method:    "GET",
+	}
+	result, err := a.driven.ResourceFilter(ctx, arg)
+	if err != nil {
+		log.Errorf("CheckUserPermission Error %v", err.Error())
+		return nil, err
+	}
+	results := make([]bool, 0, len(req.Resouces))
+	for index, r := range result {
+		if r.Id == req.Resouces[index].ObjectId && req.HasAllAction(result[index].AllowOperation) {
+			results = append(results, true)
+		} else {
+			results = append(results, false)
+		}
+	}
+	return results, nil
+}
+
 // GetObjectsBySubjectId 查询用户的所有权限配置
 func (a *auth) GetObjectsBySubjectId(ctx context.Context, req *dto.GetObjectsBySubjectIdReq) (res *dto.GetObjectsBySubjectIdRes, err error) {
 	res = &dto.GetObjectsBySubjectIdRes{

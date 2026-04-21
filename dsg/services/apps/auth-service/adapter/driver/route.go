@@ -88,9 +88,10 @@ func (r *Router) RegisterApi(engine *gin.Engine) {
 		policyRouter.DELETE("", r.AuthV2Controller.Delete) // 策略删除
 
 		//资源接口
-		router.GET("/subject/objects", r.AuthV2Controller.GetObjectsBySubjectId)     // 访问者拥有的资源
-		router.GET("/sub-views", r.AuthV2Controller.ListSubViews)                    // 获取拥有指定动作权限的子视图列表
-		router.GET("/menu-resource/actions", r.AuthV2Controller.MenuResourceActions) //查询菜单资源的允许的操作
+		router.GET("/subject/objects", r.AuthV2Controller.GetObjectsBySubjectId)             // 访问者拥有的资源
+		router.GET("/sub-views", r.AuthV2Controller.ListSubViews)                            // 获取拥有指定动作权限的子视图列表
+		router.GET("/menu-resource/actions", r.AuthV2Controller.MenuResourceActions)         //查询菜单资源的允许的操作
+		router.POST("/data-resource/operations", r.AuthV2Controller.UserOperationBatchCheck) //数据资源批量策略验证
 		//策略验证
 		rawRouter := engine.Group("/api/auth-service/v1")
 		rawRouter.POST("/enforce", setContextWithToken, r.AuthV2Controller.Enforce) //策略验证

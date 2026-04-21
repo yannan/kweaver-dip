@@ -208,6 +208,40 @@ func (s *Controller) Enforce(c *gin.Context) {
 	ginx.ResOKJson(c, res)
 }
 
+// UserOperationBatchCheck 当前用户的策略验证
+//
+//	@Description	策略验证
+//	@Tags			策略
+//	@Summary		策略验证
+//	@Accept			json
+//	@Produce		json
+//	@Param			_	body		dto.CurrentUserBatchEnforce	true	"请求参数"
+//	@Success		200	{object}	[]bool	"成功响应参数"
+//	@Failure		400	{object}	rest.HttpError			"失败响应参数"
+//	@Router			/api/auth-service/v1/enforce [post]
+func (s *Controller) UserOperationBatchCheck(c *gin.Context) {
+	req := &dto.CurrentUserBatchEnforce{}
+
+	if _, err := form_validator.BindJsonAndValid(c, req); err != nil {
+		switch err.(type) {
+		case form_validator.ValidErrors:
+			ginx.ResErrJson(c, errorcode.Detail(errorcode.PublicInvalidParameterJson, err))
+		default:
+			ginx.ResErrJsonWithCode(c, http.StatusBadRequest, errorcode.Desc(errorcode.PublicInvalidParameterJson))
+		}
+		return
+	}
+
+	res, err := s.authDomain.CurrentUserBatchEnforce(c.Request.Context(), req)
+	if err != nil {
+		c.Writer.WriteHeader(http.StatusBadRequest)
+		ginx.ResErrJson(c, err)
+		return
+	}
+
+	ginx.ResOKJson(c, res)
+}
+
 // UserOperationCheck 当前用户的策略验证
 //
 //	@Description	策略验证

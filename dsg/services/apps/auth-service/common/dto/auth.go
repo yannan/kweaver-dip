@@ -512,6 +512,24 @@ type CurrentUserEnforce struct {
 	Action     string `json:"action" form:"action" binding:"required"`                            //检查的操作，逗号分割的字符串                                                                                           //请求动作 view 查看 read 读取 download 下载
 }
 
+type CurrentUserBatchEnforce struct {
+	Resouces []Object `json:"resouces" form:"resouces" binding:"required"`                                             //资源列表
+	Action   []string `json:"action" form:"action" binding:"required,dive,oneof=data_query view_detail modify delete"` //检查的操作，逗号分割的字符串                                                                                           //请求动作 view 查看 read 读取 download 下载
+}
+
+func (c *CurrentUserBatchEnforce) HasAllAction(actions []string) bool {
+	return lo.Every(actions, c.Action)
+}
+
+func (c *CurrentUserBatchEnforce) ResourceObjects() []authorization.ResourceObject {
+	return lo.Times(len(c.Resouces), func(index int) authorization.ResourceObject {
+		return authorization.ResourceObject{
+			ID:   c.Resouces[index].ObjectId,
+			Type: c.Resouces[index].ObjectType,
+		}
+	})
+}
+
 const (
 	IsfOperationViewDetail    = "view_detail"
 	IsfOperationCreate        = "create"
