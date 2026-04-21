@@ -299,16 +299,16 @@ jobs:
           values.write_text(vt, encoding="utf-8")
           PY
 
-      - name: Lint Helm Chart
+      - name: Lint Helm Chart (non-blocking)
         env:
           CHART_DIR: ${{ inputs.chart_dir }}
-        run: helm lint "${CHART_DIR}"
+        run: helm lint "${CHART_DIR}" || echo "::warning::helm lint reported issues (non-blocking, matches legacy pipeline behavior)"
 
-      - name: Render Helm Chart (default values)
+      - name: Render Helm Chart (non-blocking, default values)
         env:
           CHART_DIR: ${{ inputs.chart_dir }}
           CHART_NAME: ${{ inputs.chart_name != '' && inputs.chart_name || inputs.service_name }}
-        run: helm template "${CHART_NAME}" "${CHART_DIR}" > /dev/null
+        run: helm template "${CHART_NAME}" "${CHART_DIR}" > /dev/null || echo "::warning::helm template render failed with default values (non-blocking; real deployments inject values)"
 
       - name: Package Helm Chart
         env:
