@@ -10,14 +10,14 @@ on:
       - "v*"
     paths:
       - "gbkn/**"
-      - ".github/workflows/data-semantic-build.yml"
+      - ".github/workflows/data-semantic-build.yaml"
   pull_request:
     branches:
       - main
       - master
     paths:
       - "gbkn/**"
-      - ".github/workflows/data-semantic-build.yml"
+      - ".github/workflows/data-semantic-build.yaml"
   workflow_dispatch:
     inputs:
       push_latest:

@@ -1,4 +1,4 @@
-name: frontend-build
+name: data-application-service-build
 
 on:
   push:
@@ -9,16 +9,16 @@ on:
     tags:
       - "v*"
     paths:
-      - "dsg/frontend/**"
-      - ".github/workflows/frontend-build.yml"
+      - "dsg/services/apps/data-application-service/**"
+      - ".github/workflows/data-application-service-build.yaml"
       - ".github/workflows/reusable-build-service.yml"
   pull_request:
     branches:
       - main
       - master
     paths:
-      - "dsg/frontend/**"
-      - ".github/workflows/frontend-build.yml"
+      - "dsg/services/apps/data-application-service/**"
+      - ".github/workflows/data-application-service-build.yaml"
       - ".github/workflows/reusable-build-service.yml"
   workflow_dispatch:
     inputs:
@@ -31,10 +31,10 @@ jobs:
   build:
     uses: ./.github/workflows/reusable-build-service.yml
     with:
-      service_name: anyfabric-frontend
-      image_name: af/any-fabric-frontend
-      chart_dir: dsg/frontend/helm/anyfabric-frontend
-      dockerfile: dsg/frontend/ci/Dockerfile
-      build_context: dsg/frontend
+      service_name: data-application-service
+      image_name: af/data-application-service
+      chart_dir: dsg/services/apps/data-application-service/helm/data-application-service
+      dockerfile: dsg/services/apps/data-application-service/docker/Dockerfile
+      build_context: dsg
       push_latest: ${{ inputs.push_latest || 'false' }}
     secrets: inherit

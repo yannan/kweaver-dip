@@ -1,4 +1,4 @@
-name: sailor-build
+name: data-catalog-build
 
 on:
   push:
@@ -9,16 +9,16 @@ on:
     tags:
       - "v*"
     paths:
-      - "chat-data/sailor/**"
-      - ".github/workflows/sailor-build.yml"
+      - "dsg/services/apps/data-catalog/**"
+      - ".github/workflows/data-catalog-build.yaml"
       - ".github/workflows/reusable-build-service.yml"
   pull_request:
     branches:
       - main
       - master
     paths:
-      - "chat-data/sailor/**"
-      - ".github/workflows/sailor-build.yml"
+      - "dsg/services/apps/data-catalog/**"
+      - ".github/workflows/data-catalog-build.yaml"
       - ".github/workflows/reusable-build-service.yml"
   workflow_dispatch:
     inputs:
@@ -31,10 +31,10 @@ jobs:
   build:
     uses: ./.github/workflows/reusable-build-service.yml
     with:
-      service_name: sailor
-      image_name: af/sailor
-      chart_dir: chat-data/sailor/helm/sailor
-      dockerfile: chat-data/sailor/docker/Dockerfile
-      build_context: chat-data/sailor
+      service_name: data-catalog
+      image_name: af/data-catalog
+      chart_dir: dsg/services/apps/data-catalog/helm/data-catalog
+      dockerfile: dsg/services/apps/data-catalog/docker/Dockerfile
+      build_context: dsg
       push_latest: ${{ inputs.push_latest || 'false' }}
     secrets: inherit

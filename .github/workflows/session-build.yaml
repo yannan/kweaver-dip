@@ -1,4 +1,4 @@
-name: sailor-agent-build
+name: session-build
 
 on:
   push:
@@ -9,16 +9,16 @@ on:
     tags:
       - "v*"
     paths:
-      - "chat-data/sailor-agent/**"
-      - ".github/workflows/sailor-agent-build.yml"
+      - "dsg/services/apps/session/**"
+      - ".github/workflows/session-build.yaml"
       - ".github/workflows/reusable-build-service.yml"
   pull_request:
     branches:
       - main
       - master
     paths:
-      - "chat-data/sailor-agent/**"
-      - ".github/workflows/sailor-agent-build.yml"
+      - "dsg/services/apps/session/**"
+      - ".github/workflows/session-build.yaml"
       - ".github/workflows/reusable-build-service.yml"
   workflow_dispatch:
     inputs:
@@ -31,10 +31,10 @@ jobs:
   build:
     uses: ./.github/workflows/reusable-build-service.yml
     with:
-      service_name: sailor-agent
-      image_name: af/sailor-agent
-      chart_dir: chat-data/sailor-agent/helm/sailor-agent
-      dockerfile: chat-data/sailor-agent/docker/Dockerfile
-      build_context: chat-data/sailor-agent
+      service_name: session
+      image_name: af/session
+      chart_dir: dsg/services/apps/session/helm/session
+      dockerfile: dsg/services/apps/session/docker/Dockerfile
+      build_context: dsg
       push_latest: ${{ inputs.push_latest || 'false' }}
     secrets: inherit

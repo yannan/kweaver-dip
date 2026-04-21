@@ -1,4 +1,4 @@
-name: data-exploration-service-build
+name: sailor-service-build
 
 on:
   push:
@@ -9,16 +9,16 @@ on:
     tags:
       - "v*"
     paths:
-      - "dsg/services/apps/data-exploration-service/**"
-      - ".github/workflows/data-exploration-service-build.yml"
+      - "chat-data/sailor-service/**"
+      - ".github/workflows/sailor-service-build.yaml"
       - ".github/workflows/reusable-build-service.yml"
   pull_request:
     branches:
       - main
       - master
     paths:
-      - "dsg/services/apps/data-exploration-service/**"
-      - ".github/workflows/data-exploration-service-build.yml"
+      - "chat-data/sailor-service/**"
+      - ".github/workflows/sailor-service-build.yaml"
       - ".github/workflows/reusable-build-service.yml"
   workflow_dispatch:
     inputs:
@@ -31,10 +31,10 @@ jobs:
   build:
     uses: ./.github/workflows/reusable-build-service.yml
     with:
-      service_name: data-exploration-service
-      image_name: af/data-exploration-service
-      chart_dir: dsg/services/apps/data-exploration-service/helm/data-exploration-service
-      dockerfile: dsg/services/apps/data-exploration-service/docker/Dockerfile
-      build_context: dsg
+      service_name: sailor-service
+      image_name: af/sailor-service
+      chart_dir: chat-data/sailor-service/helm/sailor-service
+      dockerfile: chat-data/sailor-service/docker/Dockerfile
+      build_context: .
       push_latest: ${{ inputs.push_latest || 'false' }}
     secrets: inherit
