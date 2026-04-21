@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - master
+      - github-action-build  # TODO: remove after CI migration stabilizes
     tags:
       - "v*"
     paths:
