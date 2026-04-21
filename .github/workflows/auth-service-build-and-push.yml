@@ -133,6 +133,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             SERVER_VERSION=${{ needs.release-version.outputs.release_tag_no_sha }}
+            GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha,scope=auth-service
           cache-to: type=gha,mode=max,scope=auth-service
 
