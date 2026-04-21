@@ -12,14 +12,20 @@ COPY services/apps/data-application-gateway/go.mod services/apps/data-applicatio
 # 下载依赖
 ARG GOPROXY_URL="http://goproxy.cn,direct"
 ARG GOPRIVATE="github.com/kweaver-ai/*"
+ARG GIT_AUTH_TOKEN
 
 ENV GOPROXY=${GOPROXY_URL} \
     GOPRIVATE=${GOPRIVATE}
 
+# Configure git credentials for private Go modules
+RUN if [ -n "${GIT_AUTH_TOKEN}" ]; then \
+      git config --global url."https://x-access-token:${GIT_AUTH_TOKEN}@github.com/".insteadOf "https://github.com/"; \
+    fi
+
 RUN go mod download
 
 # 安装构建工具
-RUN go install github.com/google/wire/cmd/wire@v0.5.0
+RUN go install github.com/google/wire/cmd/wire@v0.7.0
 
 # 复制源代码（注意：构建上下文是项目根目录，需要复制服务目录）
 COPY services/apps/data-application-gateway/ ./

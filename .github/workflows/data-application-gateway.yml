@@ -1,0 +1,40 @@
+name: Build And Push data-application-gateway
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - github-action-build  # TODO: remove after CI migration stabilizes
+    tags:
+      - "v*"
+    paths:
+      - "dsg/services/apps/data-application-gateway/**"
+      - ".github/workflows/data-application-gateway.yml"
+      - ".github/workflows/reusable-build-service.yml"
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - "dsg/services/apps/data-application-gateway/**"
+      - ".github/workflows/data-application-gateway.yml"
+      - ".github/workflows/reusable-build-service.yml"
+  workflow_dispatch:
+    inputs:
+      push_latest:
+        description: "Whether to also publish the latest tag"
+        required: false
+        default: "false"
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-service.yml
+    with:
+      service_name: data-application-gateway
+      image_name: af/data-application-gateway
+      chart_dir: dsg/services/apps/data-application-gateway/helm/data-application-gateway
+      dockerfile: dsg/services/apps/data-application-gateway/docker/Dockerfile
+      build_context: dsg
+      push_latest: ${{ inputs.push_latest || 'false' }}
+    secrets: inherit

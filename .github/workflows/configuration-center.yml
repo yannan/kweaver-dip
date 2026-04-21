@@ -1,0 +1,40 @@
+name: Build And Push configuration-center
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - github-action-build  # TODO: remove after CI migration stabilizes
+    tags:
+      - "v*"
+    paths:
+      - "dsg/services/apps/configuration-center/**"
+      - ".github/workflows/configuration-center.yml"
+      - ".github/workflows/reusable-build-service.yml"
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - "dsg/services/apps/configuration-center/**"
+      - ".github/workflows/configuration-center.yml"
+      - ".github/workflows/reusable-build-service.yml"
+  workflow_dispatch:
+    inputs:
+      push_latest:
+        description: "Whether to also publish the latest tag"
+        required: false
+        default: "false"
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-service.yml
+    with:
+      service_name: configuration-center
+      image_name: af/configuration-center
+      chart_dir: dsg/services/apps/configuration-center/helm/configuration-center
+      dockerfile: dsg/services/apps/configuration-center/docker/Dockerfile
+      build_context: dsg
+      push_latest: ${{ inputs.push_latest || 'false' }}
+    secrets: inherit
