@@ -25,7 +25,7 @@ on:
         type: string
         default: "dsg"
       image_repository:
-        description: "Full repository value for Helm values.yaml (e.g. kweaver-ai/af/auth-service). Defaults to IMAGE_NAMESPACE/image_name."
+        description: "Full repository value for Helm values.yaml (e.g. kweaver-ai/af/auth-service)"
         required: false
         type: string
         default: ""
@@ -46,7 +46,7 @@ env:
 
 jobs:
   release-version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
@@ -98,26 +98,133 @@ jobs:
             echo "push_latest=${SHOULD_PUSH_LATEST}"
           } >> "${GITHUB_OUTPUT}"
 
-  docker:
+  # Build each platform on a native runner in parallel, push by digest.
+  docker-build:
     needs:
       - release-version
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.image_name }}
     steps:
+      - name: Prepare platform pair
+        id: platform
+        run: |
+          platform="${{ matrix.platform }}"
+          echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set Up QEMU
-        if: github.event_name != 'pull_request'
-        uses: docker/setup-qemu-action@v3
 
       - name: Set Up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log In To GHCR
-        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.image_name }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.build_context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          sbom: false
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.image_name }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            SERVER_VERSION=${{ needs.release-version.outputs.release_tag_no_sha }}
+            GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          cache-from: type=gha,scope=${{ inputs.service_name }}-${{ steps.platform.outputs.pair }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}-${{ steps.platform.outputs.pair }}
+
+      - name: Export digest
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ inputs.service_name }}-${{ steps.platform.outputs.pair }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # PR: only verify that amd64 builds, don't push.
+  docker-pr-verify:
+    needs:
+      - release-version
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build amd64 (verify only, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.build_context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: linux/amd64
+          push: false
+          provenance: false
+          sbom: false
+          build-args: |
+            SERVER_VERSION=${{ needs.release-version.outputs.release_tag_no_sha }}
+            GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          cache-from: type=gha,scope=${{ inputs.service_name }}-linux-amd64
+
+  # Merge per-arch digests into a single multi-arch manifest with proper tags.
+  docker-merge:
+    needs:
+      - release-version
+      - docker-build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-${{ inputs.service_name }}-*
+          merge-multiple: true
+
+      - name: Set Up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log In To GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -134,29 +241,22 @@ jobs:
             type=raw,value=${{ needs.release-version.outputs.release_tag_no_sha }}
             type=raw,value=latest,enable=${{ needs.release-version.outputs.push_latest == 'true' }}
 
-      - name: Build (PR) / Build & Push (branch)
-        uses: docker/build-push-action@v6
-        with:
-          context: ${{ inputs.build_context }}
-          file: ${{ inputs.dockerfile }}
-          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
-          push: ${{ github.event_name != 'pull_request' }}
-          provenance: false
-          sbom: false
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            SERVER_VERSION=${{ needs.release-version.outputs.release_tag_no_sha }}
-            GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
-          cache-from: type=gha,scope=${{ inputs.service_name }}
-          cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.image_name }}@sha256:%s ' *)
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.image_name }}:${{ needs.release-version.outputs.release_tag }}
 
   helm-chart:
     if: github.event_name != 'pull_request'
     needs:
       - release-version
-      - docker
-    runs-on: ubuntu-latest
+      - docker-merge
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
