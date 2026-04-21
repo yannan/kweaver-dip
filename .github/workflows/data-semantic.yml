@@ -1,0 +1,324 @@
+name: Build And Push data-semantic
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - github-action-build  # TODO: remove after CI migration stabilizes
+    tags:
+      - "v*"
+    paths:
+      - "gbkn/**"
+      - ".github/workflows/data-semantic.yml"
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - "gbkn/**"
+      - ".github/workflows/data-semantic.yml"
+  workflow_dispatch:
+    inputs:
+      push_latest:
+        description: "Whether to also publish the latest tag"
+        required: false
+        default: "false"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: kweaver-ai
+  SERVICE_NAME: data-semantic
+  CHART_DIR: gbkn/helm/data-semantic
+  BUILD_CONTEXT: gbkn
+  IMAGE_API: af/data-semantic
+  IMAGE_CONSUMER: af/data-semantic-consumer
+
+jobs:
+  release-version:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      release_tag_no_sha: ${{ steps.version.outputs.release_tag_no_sha }}
+      push_latest: ${{ steps.version.outputs.push_latest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute release version
+        id: version
+        env:
+          WORKFLOW_PUSH_LATEST: ${{ inputs.push_latest }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          SHOULD_PUSH_LATEST="false"
+
+          CHART_VERSION="$(
+            grep -m1 -E '^version:' "${CHART_DIR}/Chart.yaml" \
+              | awk '{print $2}' | tr -d '"' | tr -d "'" | tr -d '\r'
+          )"
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            RELEASE_VERSION="${GITHUB_REF_NAME#v}"
+            RELEASE_TAG="${RELEASE_VERSION}-${SHORT_SHA}"
+            RELEASE_TAG_NO_SHA="${RELEASE_VERSION}"
+          else
+            BRANCH_OR_REF="${GITHUB_REF_NAME//\//-}"
+            RELEASE_TAG="${CHART_VERSION}-${BRANCH_OR_REF}.${SHORT_SHA}"
+            RELEASE_TAG_NO_SHA="${CHART_VERSION}-${BRANCH_OR_REF}"
+          fi
+
+          if [ "${GITHUB_REF_NAME}" = "main" ] || [ "${GITHUB_REF_NAME}" = "master" ] || [ "${WORKFLOW_PUSH_LATEST:-false}" = "true" ]; then
+            SHOULD_PUSH_LATEST="true"
+          fi
+
+          {
+            echo "release_tag=${RELEASE_TAG}"
+            echo "release_tag_no_sha=${RELEASE_TAG_NO_SHA}"
+            echo "push_latest=${SHOULD_PUSH_LATEST}"
+          } >> "${GITHUB_OUTPUT}"
+
+  docker-build:
+    needs:
+      - release-version
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - name: api
+            dockerfile: gbkn/deploy/docker/Dockerfile.api
+            image: af/data-semantic
+          - name: consumer
+            dockerfile: gbkn/deploy/docker/Dockerfile.consumer
+            image: af/data-semantic-consumer
+        platform:
+          - linux/amd64
+          - linux/arm64
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Prepare platform pair
+        id: platform
+        run: |
+          platform="${{ matrix.platform }}"
+          echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest (${{ matrix.component.name }})
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.BUILD_CONTEXT }}
+          file: ${{ matrix.component.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          provenance: false
+          sbom: false
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.component.image }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            SERVER_VERSION=${{ needs.release-version.outputs.release_tag_no_sha }}
+          cache-from: type=gha,scope=${{ env.SERVICE_NAME }}-${{ matrix.component.name }}-${{ steps.platform.outputs.pair }}
+          cache-to: type=gha,mode=max,scope=${{ env.SERVICE_NAME }}-${{ matrix.component.name }}-${{ steps.platform.outputs.pair }}
+
+      - name: Export digest
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.SERVICE_NAME }}-${{ matrix.component.name }}-${{ steps.platform.outputs.pair }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  docker-pr-verify:
+    needs:
+      - release-version
+    if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - { name: api, dockerfile: gbkn/deploy/docker/Dockerfile.api }
+          - { name: consumer, dockerfile: gbkn/deploy/docker/Dockerfile.consumer }
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build amd64 (verify only, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.BUILD_CONTEXT }}
+          file: ${{ matrix.component.dockerfile }}
+          platforms: linux/amd64
+          push: false
+          provenance: false
+          sbom: false
+          build-args: |
+            SERVER_VERSION=${{ needs.release-version.outputs.release_tag_no_sha }}
+          cache-from: type=gha,scope=${{ env.SERVICE_NAME }}-${{ matrix.component.name }}-linux-amd64
+
+  docker-merge:
+    needs:
+      - release-version
+      - docker-build
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - { name: api, image: af/data-semantic }
+          - { name: consumer, image: af/data-semantic-consumer }
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-${{ env.SERVICE_NAME }}-${{ matrix.component.name }}-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.component.image }}
+          tags: |
+            type=raw,value=${{ needs.release-version.outputs.release_tag }}
+            type=raw,value=${{ needs.release-version.outputs.release_tag_no_sha }}
+            type=raw,value=latest,enable=${{ needs.release-version.outputs.push_latest == 'true' }}
+
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.component.image }}@sha256:%s ' *)
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.component.image }}:${{ needs.release-version.outputs.release_tag }}
+
+  helm-chart:
+    if: github.event_name != 'pull_request'
+    needs:
+      - release-version
+      - docker-merge
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Align chart version, appVersion and image fields
+        env:
+          RELEASE_TAG: ${{ needs.release-version.outputs.release_tag }}
+        run: |
+          python3 <<'PY'
+          import os, re
+          from pathlib import Path
+
+          tag = os.environ["RELEASE_TAG"]
+          chart_dir = Path(os.environ["CHART_DIR"])
+          api_repo = f"kweaver-ai/{os.environ['IMAGE_API']}"
+          consumer_repo = f"kweaver-ai/{os.environ['IMAGE_CONSUMER']}"
+
+          chart = chart_dir / "Chart.yaml"
+          text = chart.read_text(encoding="utf-8")
+          text = re.sub(r"(?m)^version:.*$",    f'version: "{tag}"',    text)
+          text = re.sub(r"(?m)^appVersion:.*$", f'appVersion: "{tag}"', text)
+          chart.write_text(text, encoding="utf-8")
+
+          values = chart_dir / "values.yaml"
+          vt = values.read_text(encoding="utf-8")
+          # image.registry (the single top-level registry)
+          vt = re.sub(r"(?m)^(\s*registry:\s*).*$", r'\1ghcr.io', vt, count=1)
+          # image.api.repository / image.api.tag
+          vt = re.sub(r"(?ms)(^\s*api:\s*\n\s*repository:\s*).*?(\n\s*tag:\s*).*?(\n)",
+                      rf'\1{api_repo}\2"{tag}"\3', vt, count=1)
+          # image.consumer.repository / image.consumer.tag
+          vt = re.sub(r"(?ms)(^\s*consumer:\s*\n\s*repository:\s*).*?(\n\s*tag:\s*).*?(\n)",
+                      rf'\1{consumer_repo}\2"{tag}"\3', vt, count=1)
+          values.write_text(vt, encoding="utf-8")
+
+          # Show result for debugging
+          print("---values.yaml (image section)---")
+          lines = values.read_text(encoding="utf-8").splitlines()
+          started = False
+          for i, l in enumerate(lines):
+            if l.startswith("image:"):
+              started = True
+            if started:
+              print(l)
+              if started and l and not l.startswith(" ") and not l.startswith("image:"):
+                break
+          PY
+
+      - name: Lint Helm Chart (non-blocking)
+        run: helm lint "${CHART_DIR}" || echo "::warning::helm lint reported issues"
+
+      - name: Render Helm Chart (non-blocking)
+        run: helm template "${SERVICE_NAME}" "${CHART_DIR}" > /dev/null || echo "::warning::helm template render failed"
+
+      - name: Package Helm Chart
+        run: |
+          mkdir -p dist-chart
+          helm package "${CHART_DIR}" --destination dist-chart
+
+      - name: Log In To GHCR (Helm OCI)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+
+      - name: Push Chart to GHCR (OCI)
+        run: |
+          set -euo pipefail
+          for tgz in dist-chart/*.tgz; do
+            echo "Pushing ${tgz} to oci://${REGISTRY}/${IMAGE_NAMESPACE}/charts"
+            helm push "${tgz}" "oci://${REGISTRY}/${IMAGE_NAMESPACE}/charts"
+          done
+
+      - name: Upload Chart Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.SERVICE_NAME }}-chart
+          path: dist-chart/*.tgz
+          if-no-files-found: error
