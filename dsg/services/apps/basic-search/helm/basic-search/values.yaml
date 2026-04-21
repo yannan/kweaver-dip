@@ -73,6 +73,14 @@ depServices:
     username: "kafkaclient"
     password: "eisoo.com123"
     groupId: "af.basic-search"
+  mq:
+    version: "2.3.1"
+    uri: kafka-headless.resource:9097
+    clientId: af.basic-search
+    groupId: "af.basic-search"
+    auth:
+      username: "kafkaclient"
+      password: "eisoo.com123"
   configuration-center:
     host: configuration-center
     port: 8133
