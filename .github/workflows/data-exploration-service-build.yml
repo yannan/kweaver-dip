@@ -10,7 +10,7 @@ on:
       - "v*"
     paths:
       - "dsg/services/apps/data-exploration-service/**"
-      - ".github/workflows/data-exploration-service.yml"
+      - ".github/workflows/data-exploration-service-build.yml"
       - ".github/workflows/reusable-build-service.yml"
   pull_request:
     branches:
@@ -18,7 +18,7 @@ on:
       - master
     paths:
       - "dsg/services/apps/data-exploration-service/**"
-      - ".github/workflows/data-exploration-service.yml"
+      - ".github/workflows/data-exploration-service-build.yml"
       - ".github/workflows/reusable-build-service.yml"
   workflow_dispatch:
     inputs:

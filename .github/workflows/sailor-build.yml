@@ -10,7 +10,7 @@ on:
       - "v*"
     paths:
       - "chat-data/sailor/**"
-      - ".github/workflows/sailor.yml"
+      - ".github/workflows/sailor-build.yml"
       - ".github/workflows/reusable-build-service.yml"
   pull_request:
     branches:
@@ -18,7 +18,7 @@ on:
       - master
     paths:
       - "chat-data/sailor/**"
-      - ".github/workflows/sailor.yml"
+      - ".github/workflows/sailor-build.yml"
       - ".github/workflows/reusable-build-service.yml"
   workflow_dispatch:
     inputs:

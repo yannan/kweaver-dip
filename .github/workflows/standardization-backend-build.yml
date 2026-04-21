@@ -10,7 +10,7 @@ on:
       - "v*"
     paths:
       - "dsg/services/standardization-backend/**"
-      - ".github/workflows/standardization-backend.yml"
+      - ".github/workflows/standardization-backend-build.yml"
       - ".github/workflows/reusable-build-service.yml"
   pull_request:
     branches:
@@ -18,7 +18,7 @@ on:
       - master
     paths:
       - "dsg/services/standardization-backend/**"
-      - ".github/workflows/standardization-backend.yml"
+      - ".github/workflows/standardization-backend-build.yml"
       - ".github/workflows/reusable-build-service.yml"
   workflow_dispatch:
     inputs:
