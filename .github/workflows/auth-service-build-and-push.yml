@@ -24,7 +24,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAMESPACE: kweaver-ai
+  IMAGE_NAMESPACE: kweaver-ai/af
   SERVICE_NAME: auth-service
   SERVICE_DIR: dsg/services/apps/auth-service
   CHART_DIR: dsg/services/apps/auth-service/helm/auth-service
@@ -175,7 +175,7 @@ jobs:
           values = chart_dir / "values.yaml"
           vt = values.read_text(encoding="utf-8")
           vt = re.sub(r"(?m)^(\s*registry:\s*).*$",   r'\1ghcr.io',                 vt, count=1)
-          vt = re.sub(r"(?m)^(\s*repository:\s*).*$", r'\1kweaver-ai/auth-service', vt, count=1)
+          vt = re.sub(r"(?m)^(\s*repository:\s*).*$", r'\1kweaver-ai/af/auth-service', vt, count=1)
           vt = re.sub(r"(?m)^(\s*tag:\s*).*$",        rf'\1"{tag}"',                vt, count=1)
           values.write_text(vt, encoding="utf-8")
           PY
