@@ -107,6 +107,7 @@ func (a *auth) CurrentUserEnforce(ctx context.Context, req *dto.CurrentUserEnfor
 		},
 		Operation: []string{req.Action},
 		Method:    "GET",
+		Include:   []string{},
 	}
 	result, err := a.driven.OperationCheck(ctx, arg)
 	if err != nil {
@@ -131,6 +132,7 @@ func (a *auth) CurrentUserBatchEnforce(ctx context.Context, req *dto.CurrentUser
 		Resources: req.ResourceObjects(),
 		Operation: req.Action,
 		Method:    "GET",
+		Include:   []string{},
 	}
 	result, err := a.driven.ResourceFilter(ctx, arg)
 	if err != nil {
