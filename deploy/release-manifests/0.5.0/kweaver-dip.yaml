@@ -3,8 +3,7 @@ kind: VersionSet
 product: kweaver-dip
 version: 0.5.0
 source:
-  helmRepoName: kweaver
-  helmRepoUrl: https://kweaver-ai.github.io/helm-repo/
+  helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
 dependencies:
 - product: isf
   version: 0.6.0

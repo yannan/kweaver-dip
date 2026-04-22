@@ -67,6 +67,8 @@ jobs:
         run: |
           set -euo pipefail
           SHORT_SHA="$(git rev-parse --short HEAD)"
+          # Use committer date (UTC) so the version is deterministic for a given commit.
+          COMMIT_TS="$(TZ=UTC git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)"
           SHOULD_PUSH_LATEST="false"
 
           CHART_VERSION="$(
@@ -84,7 +86,11 @@ jobs:
             RELEASE_TAG_NO_SHA="${RELEASE_VERSION}"
           else
             BRANCH_OR_REF="${GITHUB_REF_NAME//\//-}"
-            RELEASE_TAG="${CHART_VERSION}-${BRANCH_OR_REF}.${SHORT_SHA}"
+            # Format: <chartVer>-<branch>.<UTC-commit-timestamp>.<shortSha>
+            # Timestamp as a numeric SemVer pre-release identifier makes tags
+            # sortable by commit time via `sort -V`, so release-manifest
+            # workflows can discover the latest chart on OCI deterministically.
+            RELEASE_TAG="${CHART_VERSION}-${BRANCH_OR_REF}.${COMMIT_TS}.${SHORT_SHA}"
             RELEASE_TAG_NO_SHA="${CHART_VERSION}-${BRANCH_OR_REF}"
           fi
 
