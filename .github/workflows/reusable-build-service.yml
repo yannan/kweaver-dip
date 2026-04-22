@@ -342,3 +342,97 @@ jobs:
           name: ${{ inputs.service_name }}-chart
           path: dist-chart/*.tgz
           if-no-files-found: error
+
+  # Auto-bump chart version in deploy/release-manifests/main/kweaver-dip.yaml
+  # for rolling "main" channel. Only runs on push to main / master / github-action-build.
+  # Feature branches are expected to maintain their own test manifests manually.
+  update-main-manifest:
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' ||
+       github.ref == 'refs/heads/master' ||
+       github.ref == 'refs/heads/github-action-build')
+    needs:
+      - release-version
+      - helm-chart
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      # Serialize manifest updates across parallel service builds on the same branch
+      # so concurrent yq edits don't clobber each other.
+      group: update-main-manifest-${{ github.ref_name }}
+      cancel-in-progress: false
+    env:
+      MANIFEST_PATH: deploy/release-manifests/main/kweaver-dip.yaml
+      RELEASE_KEY: ${{ inputs.chart_name != '' && inputs.chart_name || inputs.service_name }}
+      NEW_VERSION: ${{ needs.release-version.outputs.release_tag }}
+    steps:
+      - name: Checkout (with full history on target ref)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Check manifest entry exists
+        run: |
+          set -euo pipefail
+          if [ ! -f "${MANIFEST_PATH}" ]; then
+            echo "::warning::${MANIFEST_PATH} does not exist; skipping auto-update."
+            exit 0
+          fi
+          if ! yq -e ".releases.\"${RELEASE_KEY}\"" "${MANIFEST_PATH}" >/dev/null 2>&1; then
+            echo "::warning::release key '${RELEASE_KEY}' not found in ${MANIFEST_PATH}; skipping auto-update."
+            echo "SKIP=true" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Update chart version in manifest
+        if: env.SKIP != 'true'
+        run: |
+          set -euo pipefail
+          CURRENT="$(yq -r ".releases.\"${RELEASE_KEY}\".version // \"\"" "${MANIFEST_PATH}")"
+          if [ "${CURRENT}" = "${NEW_VERSION}" ]; then
+            echo "Manifest already pinned to ${NEW_VERSION}; nothing to do."
+            echo "SKIP=true" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          RELEASE_KEY="${RELEASE_KEY}" NEW_VERSION="${NEW_VERSION}" \
+            yq -i '.releases[strenv(RELEASE_KEY)].version = strenv(NEW_VERSION)' "${MANIFEST_PATH}"
+          echo "Updated ${RELEASE_KEY}: ${CURRENT} -> ${NEW_VERSION}"
+
+      - name: Commit and push
+        if: env.SKIP != 'true'
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Retry loop to handle race with other concurrent service updates
+          # (concurrency group should already serialize us, but be defensive).
+          for attempt in 1 2 3; do
+            git add "${MANIFEST_PATH}"
+            if git diff --cached --quiet; then
+              echo "No changes to commit."
+              exit 0
+            fi
+            git commit -m "chore(manifest): bump ${RELEASE_KEY} to ${NEW_VERSION} [skip ci]"
+            if git push origin HEAD:"${GITHUB_REF_NAME}"; then
+              echo "Pushed manifest update."
+              exit 0
+            fi
+            echo "Push rejected (attempt ${attempt}); pulling --rebase and retrying."
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            # Re-apply the yq edit on top of the rebased tree (previous commit may be gone after rebase).
+            RELEASE_KEY="${RELEASE_KEY}" NEW_VERSION="${NEW_VERSION}" \
+              yq -i '.releases[strenv(RELEASE_KEY)].version = strenv(NEW_VERSION)' "${MANIFEST_PATH}"
+          done
+          echo "::error::Failed to push manifest update after 3 attempts."
+          exit 1
