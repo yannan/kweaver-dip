@@ -426,17 +426,33 @@ install_dip() {
     kubectl create namespace "${namespace}" 2>/dev/null || true
 
     # Resolve chart source: local directory takes priority over remote repo
+    local helm_repo_name_or_url=""
     if [[ "${use_local}" != "true" ]]; then
-        if [[ -z "${HELM_CHART_REPO_NAME}" ]]; then
-            HELM_CHART_REPO_NAME="kweaver"
+        # Read helmRepoUrl from manifest if available
+        local manifest_helm_repo_url=""
+        if [[ -n "${DIP_VERSION_MANIFEST_FILE:-}" ]]; then
+            manifest_helm_repo_url="$(get_release_manifest_helm_repo_url "${DIP_VERSION_MANIFEST_FILE}")"
         fi
+
+        # Use manifest helmRepoUrl if present, otherwise fall back to env vars
+        local helm_repo_url="${manifest_helm_repo_url:-${HELM_CHART_REPO_URL}}"
+        helm_repo_name_or_url="${helm_repo_url}"
+
+        # If not OCI URL, use repo name format
+        if [[ "${helm_repo_url}" != oci://* ]]; then
+            if [[ -z "${HELM_CHART_REPO_NAME}" ]]; then
+                HELM_CHART_REPO_NAME="kweaver"
+            fi
+            helm_repo_name_or_url="${HELM_CHART_REPO_NAME}"
+        fi
+
         log_info "No explicit local DIP charts directory provided, using Helm repo."
         log_info "  Version:   ${HELM_CHART_VERSION:-latest}"
         if [[ -n "${DIP_VERSION_MANIFEST_FILE:-}" ]]; then
             log_info "  Version Manifest: ${DIP_VERSION_MANIFEST_FILE}"
         fi
-        log_info "  Helm Repo: ${HELM_CHART_REPO_NAME} -> ${HELM_CHART_REPO_URL}"
-        ensure_helm_repo "${HELM_CHART_REPO_NAME}" "${HELM_CHART_REPO_URL}"
+        log_info "  Helm Repo: ${helm_repo_name_or_url} -> ${helm_repo_url}"
+        ensure_helm_repo "${helm_repo_name_or_url}" "${helm_repo_url}"
     fi
 
     log_info "Target namespace: ${namespace}"
@@ -451,7 +467,7 @@ install_dip() {
         if [[ "${use_local}" == "true" ]]; then
             _install_dip_release_local "${release_name}" "${charts_dir}" "${namespace}"
         else
-            _install_dip_release_repo "${release_name}" "${chart_name}" "${namespace}" "${HELM_CHART_REPO_NAME}" "${release_version}"
+            _install_dip_release_repo "${release_name}" "${chart_name}" "${namespace}" "${helm_repo_name_or_url}" "${release_version}"
         fi
     done < <(_dip_release_names)
 
@@ -476,8 +492,21 @@ download_dip() {
     ensure_helm_available
     _dip_require_version_manifest || return 1
 
-    HELM_CHART_REPO_NAME="${HELM_CHART_REPO_NAME:-kweaver}"
-    HELM_CHART_REPO_URL="${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}"
+    # Read helmRepoUrl from manifest if available
+    local manifest_helm_repo_url=""
+    if [[ -n "${DIP_VERSION_MANIFEST_FILE:-}" ]]; then
+        manifest_helm_repo_url="$(get_release_manifest_helm_repo_url "${DIP_VERSION_MANIFEST_FILE}")"
+    fi
+
+    # Use manifest helmRepoUrl if present, otherwise fall back to env vars
+    local helm_repo_url="${manifest_helm_repo_url:-${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}}"
+    local helm_repo_name_or_url="${helm_repo_url}"
+
+    # If not OCI URL, use repo name format
+    if [[ "${helm_repo_url}" != oci://* ]]; then
+        HELM_CHART_REPO_NAME="${HELM_CHART_REPO_NAME:-kweaver}"
+        helm_repo_name_or_url="${HELM_CHART_REPO_NAME}"
+    fi
 
     local charts_dir
     charts_dir="$(_dip_download_charts_dir)"
@@ -491,7 +520,7 @@ download_dip() {
     ISF_LOCAL_CHARTS_DIR="${charts_dir}"
     ENABLE_ISF="true"
 
-    ensure_helm_repo "${HELM_CHART_REPO_NAME}" "${HELM_CHART_REPO_URL}"
+    ensure_helm_repo "${helm_repo_name_or_url}" "${helm_repo_url}"
     if [[ -n "${DIP_VERSION_MANIFEST_FILE:-}" ]]; then
         CORE_VERSION_MANIFEST_FILE="$(_dip_resolve_core_dependency_manifest)"
         HELM_CHART_VERSION="$(_dip_resolve_core_dependency_version)"
@@ -507,7 +536,7 @@ download_dip() {
         local chart_name
         release_version="$(_dip_resolve_release_version "${release_name}")"
         chart_name="$(_dip_resolve_chart_name "${release_name}")"
-        download_chart_to_cache "${charts_dir}" "${HELM_CHART_REPO_NAME}" "${chart_name}" "${release_version}" "${FORCE_REFRESH_CHARTS:-false}"
+        download_chart_to_cache "${charts_dir}" "${helm_repo_name_or_url}" "${chart_name}" "${release_version}" "${FORCE_REFRESH_CHARTS:-false}"
     done < <(_dip_release_names)
 
     CORE_LOCAL_CHARTS_DIR="${original_core_charts_dir}"
@@ -568,17 +597,29 @@ _install_dip_release_local() {
     fi
 }
 
-# Install a single DIP release from a Helm repository
+# Install a single DIP release from a Helm repository or OCI registry
 _install_dip_release_repo() {
     local release_name="$1"
     local chart_name="$2"
     local namespace="$3"
-    local helm_repo_name="$4"
+    local helm_repo_name_or_url="$4"
     local release_version="$5"
+
+    # Detect if helm_repo_name_or_url is an OCI URL
+    local is_oci=false
+    local oci_base_url=""
+    if [[ "${helm_repo_name_or_url}" == oci://* ]]; then
+        is_oci=true
+        oci_base_url="${helm_repo_name_or_url}"
+    fi
 
     local target_version="${release_version}"
     if [[ -z "${target_version}" ]]; then
-        target_version=$(get_repo_chart_latest_version "${helm_repo_name}" "${chart_name}")
+        if [[ "${is_oci}" == "true" ]]; then
+            log_error "OCI charts require explicit version. Please provide version in manifest"
+            return 1
+        fi
+        target_version=$(get_repo_chart_latest_version "${helm_repo_name_or_url}" "${chart_name}")
     fi
 
     if should_skip_upgrade_same_chart_version "${release_name}" "${namespace}" "${chart_name}" "${target_version}"; then
@@ -593,9 +634,14 @@ _install_dip_release_repo() {
         helm uninstall "${release_name}" -n "${namespace}" 2>/dev/null || true
     fi
 
-    log_info "Installing ${release_name} from repo..."
-
-    local chart_ref="${helm_repo_name}/${chart_name}"
+    local chart_ref
+    if [[ "${is_oci}" == "true" ]]; then
+        chart_ref="${oci_base_url}/${chart_name}"
+        log_info "Installing ${release_name} from OCI registry..."
+    else
+        chart_ref="${helm_repo_name_or_url}/${chart_name}"
+        log_info "Installing ${release_name} from repo..."
+    fi
 
     local -a helm_args=(
         "upgrade" "--install" "${release_name}"

@@ -222,49 +222,70 @@ download_core() {
     ensure_helm_available
     _core_require_version_manifest || return 1
 
-    HELM_CHART_REPO_NAME="${HELM_CHART_REPO_NAME:-kweaver}"
-    HELM_CHART_REPO_URL="${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}"
+    # Read helmRepoUrl from manifest if available
+    local manifest_helm_repo_url=""
+    if [[ -n "${CORE_VERSION_MANIFEST_FILE:-}" ]]; then
+        manifest_helm_repo_url="$(get_release_manifest_helm_repo_url "${CORE_VERSION_MANIFEST_FILE}")"
+    fi
+
+    # Use manifest helmRepoUrl if present, otherwise fall back to env vars
+    local helm_repo_url="${manifest_helm_repo_url:-${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}}"
+    local helm_repo_name_or_url="${helm_repo_url}"
+
+    # If not OCI URL, use repo name format
+    if [[ "${helm_repo_url}" != oci://* ]]; then
+        HELM_CHART_REPO_NAME="${HELM_CHART_REPO_NAME:-kweaver}"
+        helm_repo_name_or_url="${HELM_CHART_REPO_NAME}"
+    fi
 
     local charts_dir
     charts_dir="$(_core_download_charts_dir)"
 
-    ensure_helm_repo "${HELM_CHART_REPO_NAME}" "${HELM_CHART_REPO_URL}"
+    ensure_helm_repo "${helm_repo_name_or_url}" "${helm_repo_url}"
 
-    # Check if ISF dependency is declared in manifest
+    # Check if ISF dependency is declared in manifest and should be enabled
     local isf_dep_version=""
     local isf_dep_manifest=""
+    local should_download_isf=false
+    
     if [[ -n "${CORE_VERSION_MANIFEST_FILE:-}" ]]; then
         isf_dep_version="$(_core_resolve_isf_dependency_version)"
         isf_dep_manifest="$(_core_resolve_isf_dependency_manifest)"
+        
+        if [[ -n "${isf_dep_version}" ]]; then
+            # Check if dependency should be enabled based on --set values
+            if is_dependency_enabled "${CORE_VERSION_MANIFEST_FILE}" "isf" "${CORE_SET_VALUES[@]}"; then
+                should_download_isf=true
+            fi
+        fi
     fi
 
-    if [[ -n "${isf_dep_version}" ]]; then
-        log_info "ISF dependency found in manifest (version: ${isf_dep_version}), downloading ISF charts"
+    if [[ "${should_download_isf}" == "true" ]]; then
         local original_isf_charts_dir="${ISF_LOCAL_CHARTS_DIR:-}"
         local original_isf_manifest_file="${ISF_VERSION_MANIFEST_FILE:-}"
         local original_chart_version="${HELM_CHART_VERSION:-}"
         ISF_LOCAL_CHARTS_DIR="${charts_dir}"
         HELM_CHART_VERSION="${isf_dep_version}"
         ISF_VERSION_MANIFEST_FILE="${isf_dep_manifest}"
-
-        download_isf
-
+        
+        if ! download_isf; then
+            ISF_LOCAL_CHARTS_DIR="${original_isf_charts_dir}"
+            ISF_VERSION_MANIFEST_FILE="${original_isf_manifest_file}"
+            HELM_CHART_VERSION="${original_chart_version}"
+            log_error "Failed to download ISF charts"
+            return 1
+        fi
         ISF_LOCAL_CHARTS_DIR="${original_isf_charts_dir}"
         ISF_VERSION_MANIFEST_FILE="${original_isf_manifest_file}"
         HELM_CHART_VERSION="${original_chart_version}"
-    else
-        log_info "No ISF dependency declared in manifest, skipping ISF download"
     fi
 
     local -a release_names=()
     mapfile -t release_names < <(_core_release_names)
-    local release_name
-    local release_version
-    local chart_name
     for release_name in "${release_names[@]}"; do
         release_version="$(_core_resolve_release_version "${release_name}")"
         chart_name="$(_core_resolve_chart_name "${release_name}")"
-        download_chart_to_cache "${charts_dir}" "${HELM_CHART_REPO_NAME}" "${chart_name}" "${release_version}" "${FORCE_REFRESH_CHARTS:-false}"
+        download_chart_to_cache "${charts_dir}" "${helm_repo_name_or_url}" "${chart_name}" "${release_version}" "${FORCE_REFRESH_CHARTS:-false}"
     done
 }
 
@@ -331,20 +352,37 @@ _install_core_release_local() {
     fi
 }
 
-# Install a single kweaver-core release from a Helm repository
+# Install a single kweaver-core release from a Helm repository or OCI registry
 _install_core_release_repo() {
     local release_name="$1"
     local namespace="$2"
-    local helm_repo_name="$3"
+    local helm_repo_name_or_url="$3"
     local release_version="$4"
     local chart_name
     chart_name="$(_core_resolve_chart_name "${release_name}")"
 
-    local chart_ref="${helm_repo_name}/${chart_name}"
+    # Detect if helm_repo_name_or_url is an OCI URL
+    local is_oci=false
+    local oci_base_url=""
+    if [[ "${helm_repo_name_or_url}" == oci://* ]]; then
+        is_oci=true
+        oci_base_url="${helm_repo_name_or_url}"
+    fi
+
+    local chart_ref
+    if [[ "${is_oci}" == "true" ]]; then
+        chart_ref="${oci_base_url}/${chart_name}"
+    else
+        chart_ref="${helm_repo_name_or_url}/${chart_name}"
+    fi
 
     local target_version="${release_version}"
     if [[ -z "${target_version}" ]]; then
-        target_version=$(get_repo_chart_latest_version "${helm_repo_name}" "${chart_name}")
+        if [[ "${is_oci}" == "true" ]]; then
+            log_error "OCI charts require explicit version. Please provide version in manifest"
+            return 1
+        fi
+        target_version=$(get_repo_chart_latest_version "${helm_repo_name_or_url}" "${chart_name}")
     fi
 
     if should_skip_upgrade_same_chart_version "${release_name}" "${namespace}" "${chart_name}" "${target_version}"; then
@@ -408,19 +446,34 @@ install_core() {
     charts_dir="$(_core_resolve_charts_dir)"
 
     local use_local=false
+    local helm_repo_name_or_url=""
     if [[ -n "${charts_dir}" && -d "${charts_dir}" ]]; then
         use_local=true
         log_info "Using local Core charts from: ${charts_dir}"
     else
+        # Read helmRepoUrl from manifest if available
+        local manifest_helm_repo_url=""
+        if [[ -n "${CORE_VERSION_MANIFEST_FILE:-}" ]]; then
+            manifest_helm_repo_url="$(get_release_manifest_helm_repo_url "${CORE_VERSION_MANIFEST_FILE}")"
+        fi
+
+        # Use manifest helmRepoUrl if present, otherwise fall back to env vars
+        local helm_repo_url="${manifest_helm_repo_url:-${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}}"
+        helm_repo_name_or_url="${helm_repo_url}"
+
+        # If not OCI URL, use repo name format
+        if [[ "${helm_repo_url}" != oci://* ]]; then
+            HELM_CHART_REPO_NAME="${HELM_CHART_REPO_NAME:-kweaver}"
+            helm_repo_name_or_url="${HELM_CHART_REPO_NAME}"
+        fi
+
         log_info "No explicit local Core charts directory provided, using Helm repo."
         log_info "  Version:   ${HELM_CHART_VERSION}"
         if [[ -n "${CORE_VERSION_MANIFEST_FILE:-}" ]]; then
             log_info "  Version Manifest: ${CORE_VERSION_MANIFEST_FILE}"
         fi
-        log_info "  Helm Repo: ${HELM_CHART_REPO_NAME:-kweaver} -> ${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}"
-        HELM_CHART_REPO_NAME="${HELM_CHART_REPO_NAME:-kweaver}"
-        HELM_CHART_REPO_URL="${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}"
-        ensure_helm_repo "${HELM_CHART_REPO_NAME}" "${HELM_CHART_REPO_URL}"
+        log_info "  Helm Repo: ${helm_repo_name_or_url} -> ${helm_repo_url}"
+        ensure_helm_repo "${helm_repo_name_or_url}" "${helm_repo_url}"
     fi
 
     log_info "Target namespace: ${namespace}"
@@ -481,7 +534,7 @@ install_core() {
         if [[ "${use_local}" == "true" ]]; then
             _install_core_release_local "${release_name}" "${charts_dir}" "${namespace}"
         else
-            _install_core_release_repo "${release_name}" "${namespace}" "${HELM_CHART_REPO_NAME}" "${release_version}"
+            _install_core_release_repo "${release_name}" "${namespace}" "${helm_repo_name_or_url}" "${release_version}"
         fi
     done
 

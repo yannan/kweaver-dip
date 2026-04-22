@@ -194,21 +194,33 @@ version_gt() {
 }
 
 # Download a chart to the local cache if needed.
-# Args: <charts_dir> <repo_name> <chart_name> [chart_version] [force_refresh]
+# Args: <charts_dir> <repo_name_or_url> <chart_name> [chart_version] [force_refresh]
 download_chart_to_cache() {
     local charts_dir="$1"
-    local repo_name="$2"
+    local repo_name_or_url="$2"
     local chart_name="$3"
     local requested_version="${4:-}"
     local force_refresh="${5:-false}"
 
     charts_dir="$(ensure_charts_dir "${charts_dir}")"
 
+    # Detect if repo_name_or_url is an OCI URL
+    local is_oci=false
+    local oci_base_url=""
+    if [[ "${repo_name_or_url}" == oci://* ]]; then
+        is_oci=true
+        oci_base_url="${repo_name_or_url}"
+    fi
+
     local target_version="${requested_version}"
     if [[ -z "${target_version}" ]]; then
-        target_version="$(get_repo_chart_latest_version "${repo_name}" "${chart_name}")"
+        if [[ "${is_oci}" == "true" ]]; then
+            log_error "OCI charts require explicit version. Please provide --version"
+            return 1
+        fi
+        target_version="$(get_repo_chart_latest_version "${repo_name_or_url}" "${chart_name}")"
         if [[ -z "${target_version}" ]]; then
-            log_error "Failed to resolve latest chart version for ${repo_name}/${chart_name}"
+            log_error "Failed to resolve latest chart version for ${repo_name_or_url}/${chart_name}"
             return 1
         fi
     fi
@@ -228,8 +240,16 @@ download_chart_to_cache() {
         fi
     fi
 
-    log_info "Downloading ${repo_name}/${chart_name} ${target_version} to ${charts_dir}..."
-    helm pull "${repo_name}/${chart_name}" \
+    local chart_ref
+    if [[ "${is_oci}" == "true" ]]; then
+        chart_ref="${oci_base_url}/${chart_name}"
+        log_info "Downloading OCI chart ${chart_ref} ${target_version} to ${charts_dir}..."
+    else
+        chart_ref="${repo_name_or_url}/${chart_name}"
+        log_info "Downloading ${repo_name_or_url}/${chart_name} ${target_version} to ${charts_dir}..."
+    fi
+
+    helm pull "${chart_ref}" \
         --version "${target_version}" \
         --devel \
         --destination "${charts_dir}"
@@ -240,6 +260,13 @@ download_chart_to_cache() {
 ensure_helm_repo() {
     local repo_name="$1"
     local repo_url="$2"
+
+    # Skip repo add for OCI URLs (oci://)
+    if [[ "${repo_url}" == oci://* ]]; then
+        log_info "OCI registry detected, skipping helm repo add: ${repo_url}"
+        return 0
+    fi
+
     helm repo add --force-update "${repo_name}" "${repo_url}" || true
     helm repo update "${repo_name}" || true
 }
@@ -700,6 +727,18 @@ get_release_manifest_dependency_manifest_optional() {
 
     manifest_dir="$(cd "$(dirname "${manifest_file}")" && pwd)"
     echo "$(cd "${manifest_dir}" && cd "$(dirname "${value}")" && pwd)/$(basename "${value}")"
+}
+
+# Get the helmRepoUrl from a release manifest.
+# Args: <manifest_file>
+get_release_manifest_helm_repo_url() {
+    local manifest_file="$1"
+
+    [[ -f "${manifest_file}" ]] || return 0
+
+    local value
+    value="$(_manifest_strip_quotes "$(_manifest_read_top_level_value "${manifest_file}" "helmRepoUrl")")"
+    echo "${value}"
 }
 
 # Extract values from release manifest and convert to --set-string arguments.
