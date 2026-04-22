@@ -94,7 +94,7 @@ jobs:
             RELEASE_TAG_NO_SHA="${CHART_VERSION}-${BRANCH_OR_REF}"
           fi
 
-          if [ "${GITHUB_REF_NAME}" = "main" ] || [ "${GITHUB_REF_NAME}" = "master" ] || [ "${WORKFLOW_PUSH_LATEST:-false}" = "true" ]; then
+          if [ "${GITHUB_REF_NAME}" = "main" ] || [ "${WORKFLOW_PUSH_LATEST:-false}" = "true" ]; then
             SHOULD_PUSH_LATEST="true"
           fi
 
@@ -344,14 +344,13 @@ jobs:
           if-no-files-found: error
 
   # Auto-bump chart version in deploy/release-manifests/main/kweaver-dip.yaml
-  # for rolling "main" channel. Only runs on direct push to main / master
+  # for rolling "main" channel. Only runs on direct push to main
   # (i.e. after a PR is merged). Feature / test branches must edit manifests
   # manually; they never mutate the main-channel manifest.
   update-main-manifest:
     if: >-
       github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' ||
-       github.ref == 'refs/heads/master')
+      github.ref == 'refs/heads/main'
     needs:
       - release-version
       - helm-chart
