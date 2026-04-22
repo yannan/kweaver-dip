@@ -344,14 +344,14 @@ jobs:
           if-no-files-found: error
 
   # Auto-bump chart version in deploy/release-manifests/main/kweaver-dip.yaml
-  # for rolling "main" channel. Only runs on push to main / master / github-action-build.
-  # Feature branches are expected to maintain their own test manifests manually.
+  # for rolling "main" channel. Only runs on direct push to main / master
+  # (i.e. after a PR is merged). Feature / test branches must edit manifests
+  # manually; they never mutate the main-channel manifest.
   update-main-manifest:
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' ||
-       github.ref == 'refs/heads/master' ||
-       github.ref == 'refs/heads/github-action-build')
+       github.ref == 'refs/heads/master')
     needs:
       - release-version
       - helm-chart
