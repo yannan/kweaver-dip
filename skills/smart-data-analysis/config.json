@@ -4,7 +4,7 @@
   "openclaw": {
     "skillKey": "smart-data-analysis"
   },
-  "description": "数据分析总入口编排：先做环境检测与配置检查，再按意图路由到找表（smart-search-tables）或问数（smart-ask-data）子流程；仅在问数场景按需触发 execute-code-sync/json2plot。",
+  "description": "数据分析总入口编排：先做环境检测与配置检查，再按意图路由到找表（smart-search-tables）、问数（smart-ask-data）、解读（smart-data-interpretation）或报告（smart-reporting）子流程；仅在问数场景按需触发 execute-code-sync/json2plot。",
   "defaults": {
     "x_business_domain": "bd_public",
     "progress_template": "[{flow}] 进度：已完成第 {step} 步（{name}）；下一步：{next}"
@@ -17,6 +17,14 @@
     "smart_ask_data": {
       "type": "subskill",
       "reference": "skills/smart-data-analysis/references/smart-ask-data.md"
+    },
+    "smart_data_interpretation": {
+      "type": "subskill",
+      "reference": "skills/smart-data-analysis/references/smart-data-interpretation.md"
+    },
+    "smart_reporting": {
+      "type": "subskill",
+      "reference": "skills/smart-data-analysis/references/smart-reporting.md"
     },
     "execute_code_sync": {
       "type": "subskill",
@@ -68,6 +76,20 @@
       "flow": "smart-ask-data",
       "trigger": "intent=ask_data",
       "reference": "skills/smart-data-analysis/references/smart-ask-data.md"
+    },
+    {
+      "step": 5,
+      "role": "interpret_data",
+      "flow": "smart-data-interpretation",
+      "trigger": "intent=data_interpretation",
+      "reference": "skills/smart-data-analysis/references/smart-data-interpretation.md"
+    },
+    {
+      "step": 5,
+      "role": "generate_report",
+      "flow": "smart-reporting",
+      "trigger": "intent=reporting",
+      "reference": "skills/smart-data-analysis/references/smart-reporting.md"
     },
     {
       "step": 11,

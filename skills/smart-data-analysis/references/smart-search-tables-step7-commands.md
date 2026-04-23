@@ -2,6 +2,8 @@
 
 用于承载 `smart-search-tables.md` 第 7 步的命令模板与参数防错细则。
 
+> **与主流程步号对齐**：找数全流程为第 **5–11** 步。第 7 步为本文件的实例检索；其后为第 8 步筛选视图、第 9 步为**保留序号、固定跳过**（不执行 `view_detail` 校验）、第 10 步职责查询（按触发）、第 **11** 步**总结结果**（四列表格交付）。详见 [`smart-search-tables.md`](smart-search-tables.md)。
+
 ## 适用范围
 
 - 场景：执行 `kweaver context-loader query-object-instance` 检索元数据实例
