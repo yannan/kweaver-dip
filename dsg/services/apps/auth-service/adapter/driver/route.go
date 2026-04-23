@@ -13,6 +13,7 @@ import (
 	"github.com/kweaver-ai/idrm-go-frame/core/telemetry/log"
 	"github.com/kweaver-ai/idrm-go-frame/core/telemetry/trace"
 	auth_v2 "github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driver/v2/auth"
+	data_auth_v2 "github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driver/v2/data_auth"
 )
 
 var _ IRouter = (*Router)(nil)
@@ -49,6 +50,7 @@ type IRouter interface {
 type Router struct {
 	Middleware       middleware.Middleware
 	AuthV2Controller *auth_v2.Controller
+	DataAuthV2       *data_auth_v2.Controller
 }
 
 func (r *Router) Register(engine *gin.Engine) error {
@@ -102,6 +104,11 @@ func (r *Router) RegisterApi(engine *gin.Engine) {
 		routerInternal.POST("/rule/enforce", setContextWithToken, r.AuthV2Controller.RuleEnforce)                  //数据策略验证
 		routerInternal.POST("/menu-resource/enforce", setContextWithToken, r.AuthV2Controller.MenuResourceEnforce) //权限资源验证, 废弃
 		routerInternal.GET("/menu-resource/actions", setContextWithToken, r.AuthV2Controller.MenuResourceActions)  //查询菜单资源的允许的操作
+
+		// 数据资源授权申请
+		dataAuthRouter := router.Group("/data-auth")
+		dataAuthRouter.POST("/apply", r.DataAuthV2.Apply)    // 申请权限
+		dataAuthRouter.GET("/status", r.DataAuthV2.Status)   // 查询申请状态
 	}
 
 }

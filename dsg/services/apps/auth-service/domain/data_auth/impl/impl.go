@@ -71,6 +71,10 @@ func (u *useCase) DataResourceAuth(ctx context.Context, req *dto.DataResourceAut
 	return nil
 }
 
+func (u *useCase) GetDataResourceAuthStatus(ctx context.Context, resourceID string) (*dto.DataViewAuthAuditDetail, error) {
+	return u.getDataAuthInfoFromCache(ctx, resourceID)
+}
+
 func (u *useCase) getResourceAuthDetail(ctx context.Context, req *dto.DataResourceAuthReqArg) (*dto.DataResourceAuthAuditDetail, error) {
 	//1. 检查申请资源是否存在, 补充资源信息
 	resources, err := u.dataModel.GetDataModelByID(ctx, req.ResouceID...)
