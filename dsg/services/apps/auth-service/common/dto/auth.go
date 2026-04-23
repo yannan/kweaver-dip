@@ -5,13 +5,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kweaver-ai/dsg/services/apps/auth-service/common/util"
 	"github.com/kweaver-ai/idrm-go-common/rest/authorization"
+	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/common/util"
 	"github.com/samber/lo"
 
-	"github.com/kweaver-ai/dsg/services/apps/auth-service/common/util/sets"
 	audit_v1 "github.com/kweaver-ai/idrm-go-common/api/audit/v1"
 	meta_v1 "github.com/kweaver-ai/idrm-go-common/api/meta/v1"
+	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/common/util/sets"
 )
 
 // SubjectType 定义访问者的类型
