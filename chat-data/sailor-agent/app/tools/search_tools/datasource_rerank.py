@@ -324,7 +324,7 @@ class DataSourceRerankTool(LLMTool):
                                 "type": v["type"],
                                 "title": v.get("title", ""),
                                 "description": v.get("description", ""),
-                                "columns": v["columns"],
+                                "columns": [],
                             })
                             break
                 if priority_table_id in data_view_list:
