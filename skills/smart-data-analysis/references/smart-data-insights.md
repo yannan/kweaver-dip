@@ -127,26 +127,17 @@ argument-hint:
 
 ---
 
-## 跨子场景公共章节（必选骨架）
+## 跨子场景最小公共约定（不重复输出模板）
 
-无论启用几类子场景，用户可见输出 **建议**包含下列 **公共** 块（子场景专有小节紧随其后）。**表达顺序**：先满足业务读者（摘要与子场景正文），再满足可复核性（附录中的技术核对）。
+四个子场景的**完整输出模板**已分别维护在 `references/*.md` 中，因此本文件不再重复“公共章节骨架”。本节只保留跨模板的最小一致性要求：
 
-### 0. 洞察摘要（必选，1～5 条）
-
-- 每条必须可回指 **某一子问题** 结果中的行 / 列，或由这些结果 **可验算** 得到。
-- **写法**：用业务词写结论（如「2025 年案件量明显高于 2024」「罚款主要集中在××类」）；避免在摘要里写英文字段名、SQL 片段或「子问题 3」等实现标签——若需编号，放到 **附录** 与表格对照。
-
-### 1. 口径与证据来源（必选）
-
-- **对用户主文（建议放在本节前半，3～8 行内）**：用自然语言说明 **本次回答基于哪类业务数据**（如「行政处罚公开信息中的处罚日期、处罚金额、违法类型」）、**时间或范围**（如「库内有数据的全部年份」）、**主要限制**（如「当前样本共 N 条」）。不出现 `kn_id` 全串也可，但须有一句「数据来自当前配置的知识网络下的查询结果」。
-- **对复核者 / 技术附录（本节后半或独立「附录：核对用」标题）**：**kn_id**、第 7 步「候选表列表」与关键词、各候选第 8 步判权要点（是否含 `data_query`）、参与查询的 `dataview_id` 的第 9 步结构摘要（`meta_table_name`/关键字段）、**子问题清单**（编号 + 最小口径 + 原样 SQL 或引用前文）、**结果集结构**、**口径复述**（与各 SQL 一致）。
-
-### 2～5. 子场景章节（按需，顺序见上）
-
-- **数据解读**：严格遵循 [references/data_interpretation.md](references/data_interpretation.md) 的章节顺序与证据约束；**对用户措辞**遵循该文件「对用户正文的语言」与主文/附录分工。
-- **维度分析**：严格遵循 [references/dimensional_analysis.md](references/dimensional_analysis.md)（同上）。
-- **对比分析**：严格遵循 [references/contrastive_analysis.md](references/contrastive_analysis.md)（同上）。
-- **归因分析**：严格遵循 [references/attribution_analysis.md](references/attribution_analysis.md)（同上）；与 `smart-reporting` 场景 `attribution_analysis_report` 的输入契约对齐，便于同轮交接。
+- **证据可回指（MUST）**：用户可见输出中的每条关键结论/数字，必须可回指到某一子问题的 `dataview query` 结果行/列，或可由结果**可验算**得到；禁止脱离证据推断。
+- **口径与核对信息必须出现（MUST）**：无论采用哪个子场景模板，都必须在适当位置包含「口径与证据来源」的最小信息（业务口径 + 时间范围/覆盖 + 样本限制；以及附录中的 kn_id、dataview_id、原样 SQL、原样结果索引等），以保证可复核。
+- **多子场景顺序（MUST）**：同时启用多个子场景时，输出顺序仍为 **数据解读 → 维度分析 → 对比分析 → 归因分析**；每个子场景章节的结构与措辞规范以其对应模板为准：
+  - 数据解读：[references/data_interpretation.md](references/data_interpretation.md)
+  - 维度分析：[references/dimensional_analysis.md](references/dimensional_analysis.md)
+  - 对比分析：[references/contrastive_analysis.md](references/contrastive_analysis.md)
+  - 归因分析：[references/attribution_analysis.md](references/attribution_analysis.md)（并与 `smart-reporting` 的 `attribution_analysis_report` 输入契约对齐，便于同轮交接）
 
 ---
 
