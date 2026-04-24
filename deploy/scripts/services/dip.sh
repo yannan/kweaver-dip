@@ -74,6 +74,18 @@ parse_dip_args() {
                 CONFIG_YAML_PATH="$2"
                 shift 2
                 ;;
+            --set)
+                # Helm --set arguments are handled in the main script loop
+                shift 2
+                ;;
+            --registry=*)
+                # Global registry parameter, handled by main script
+                shift
+                ;;
+            --registry)
+                # Global registry parameter, handled by main script
+                shift 2
+                ;;
             *)
                 log_error "Unknown argument: $1"
                 return 1
@@ -360,18 +372,6 @@ _dip_show_access_hints() {
     log_info "Access KWeaver dip-hub: ${base_url}/dip-hub"
 }
 
-_dip_append_release_extra_helm_args() {
-    local release_name="$1"
-    local target_array_name="$2"
-
-    # Apply values from manifest if exists
-    if [[ -n "${DIP_VERSION_MANIFEST_FILE:-}" && -f "${DIP_VERSION_MANIFEST_FILE}" ]]; then
-        apply_release_manifest_values "${DIP_VERSION_MANIFEST_FILE}" "kweaver-dip" "${HELM_CHART_VERSION:-}" "${release_name}" "${target_array_name}" || return 1
-    fi
-
-    return 0
-}
-
 init_dip_database() {
     local sql_dir
     sql_dir="$(resolve_versioned_sql_dir "kweaver-dip" "${HELM_CHART_VERSION:-}")"
@@ -428,23 +428,13 @@ install_dip() {
     # Resolve chart source: local directory takes priority over remote repo
     local helm_repo_name_or_url=""
     if [[ "${use_local}" != "true" ]]; then
-        # Read helmRepoUrl from manifest if available
-        local manifest_helm_repo_url=""
-        if [[ -n "${DIP_VERSION_MANIFEST_FILE:-}" ]]; then
-            manifest_helm_repo_url="$(get_release_manifest_helm_repo_url "${DIP_VERSION_MANIFEST_FILE}")"
-        fi
-
-        # Use manifest helmRepoUrl if present, otherwise fall back to env vars
-        local helm_repo_url="${manifest_helm_repo_url:-${HELM_CHART_REPO_URL}}"
-        helm_repo_name_or_url="${helm_repo_url}"
-
-        # If not OCI URL, use repo name format
-        if [[ "${helm_repo_url}" != oci://* ]]; then
-            if [[ -z "${HELM_CHART_REPO_NAME}" ]]; then
-                HELM_CHART_REPO_NAME="kweaver"
-            fi
-            helm_repo_name_or_url="${HELM_CHART_REPO_NAME}"
-        fi
+        local helm_repo_url=""
+        helm_release_resolve_repo \
+            "${DIP_VERSION_MANIFEST_FILE:-}" \
+            "${HELM_CHART_REPO_URL}" \
+            "${HELM_CHART_REPO_NAME:-kweaver}" \
+            "${DIP_REGISTRY:-}" \
+            helm_repo_url helm_repo_name_or_url
 
         log_info "No explicit local DIP charts directory provided, using Helm repo."
         log_info "  Version:   ${HELM_CHART_VERSION:-latest}"
@@ -460,18 +450,36 @@ install_dip() {
     local release_name
     local release_version
     local chart_name
+    local -a failed_releases=()
     while IFS= read -r release_name; do
         [[ -n "${release_name}" ]] || continue
         release_version="$(_dip_resolve_release_version "${release_name}")"
         chart_name="$(_dip_resolve_chart_name "${release_name}")"
         if [[ "${use_local}" == "true" ]]; then
-            _install_dip_release_local "${release_name}" "${charts_dir}" "${namespace}"
+            _install_dip_release_local "${release_name}" "${charts_dir}" "${namespace}" \
+                || failed_releases+=("${release_name}")
         else
-            _install_dip_release_repo "${release_name}" "${chart_name}" "${namespace}" "${helm_repo_name_or_url}" "${release_version}"
+            # Resolve per-release helmRepoUrl override (for mixed old/new pipeline manifests)
+            local per_release_repo="${helm_repo_name_or_url}"
+            helm_release_resolve_per_release_repo \
+                "${DIP_VERSION_MANIFEST_FILE:-}" "kweaver-dip" "${HELM_CHART_VERSION:-}" \
+                "${release_name}" "${helm_repo_name_or_url}" "${DIP_REGISTRY:-}" \
+                per_release_repo
+            _install_dip_release_repo "${release_name}" "${chart_name}" "${namespace}" "${per_release_repo}" "${release_version}" \
+                || failed_releases+=("${release_name}")
         fi
     done < <(_dip_release_names)
 
-    log_info "KWeaver DIP services installation completed."
+    if [[ ${#failed_releases[@]} -gt 0 ]]; then
+        log_warn "KWeaver DIP: ${#failed_releases[@]} release(s) failed to install:"
+        local failed_name
+        for failed_name in "${failed_releases[@]}"; do
+            log_warn "  - ${failed_name}"
+        done
+        log_warn "Continuing with remaining steps; re-run install after resolving the issues."
+    else
+        log_info "KWeaver DIP services installation completed."
+    fi
     
     # Install Etrino services (vega-hdfs, vega-calculate, vega-metadata)
     log_info "Installing Etrino services..."
@@ -492,21 +500,14 @@ download_dip() {
     ensure_helm_available
     _dip_require_version_manifest || return 1
 
-    # Read helmRepoUrl from manifest if available
-    local manifest_helm_repo_url=""
-    if [[ -n "${DIP_VERSION_MANIFEST_FILE:-}" ]]; then
-        manifest_helm_repo_url="$(get_release_manifest_helm_repo_url "${DIP_VERSION_MANIFEST_FILE}")"
-    fi
-
-    # Use manifest helmRepoUrl if present, otherwise fall back to env vars
-    local helm_repo_url="${manifest_helm_repo_url:-${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}}"
-    local helm_repo_name_or_url="${helm_repo_url}"
-
-    # If not OCI URL, use repo name format
-    if [[ "${helm_repo_url}" != oci://* ]]; then
-        HELM_CHART_REPO_NAME="${HELM_CHART_REPO_NAME:-kweaver}"
-        helm_repo_name_or_url="${HELM_CHART_REPO_NAME}"
-    fi
+    local helm_repo_url=""
+    local helm_repo_name_or_url=""
+    helm_release_resolve_repo \
+        "${DIP_VERSION_MANIFEST_FILE:-}" \
+        "${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}" \
+        "${HELM_CHART_REPO_NAME:-kweaver}" \
+        "${DIP_REGISTRY:-}" \
+        helm_repo_url helm_repo_name_or_url
 
     local charts_dir
     charts_dir="$(_dip_download_charts_dir)"
@@ -536,7 +537,12 @@ download_dip() {
         local chart_name
         release_version="$(_dip_resolve_release_version "${release_name}")"
         chart_name="$(_dip_resolve_chart_name "${release_name}")"
-        download_chart_to_cache "${charts_dir}" "${helm_repo_name_or_url}" "${chart_name}" "${release_version}" "${FORCE_REFRESH_CHARTS:-false}"
+        local per_release_repo="${helm_repo_name_or_url}"
+        helm_release_resolve_per_release_repo \
+            "${DIP_VERSION_MANIFEST_FILE:-}" "kweaver-dip" "${HELM_CHART_VERSION:-}" \
+            "${release_name}" "${helm_repo_name_or_url}" "${DIP_REGISTRY:-}" \
+            per_release_repo
+        download_chart_to_cache "${charts_dir}" "${per_release_repo}" "${chart_name}" "${release_version}" "${FORCE_REFRESH_CHARTS:-false}"
     done < <(_dip_release_names)
 
     CORE_LOCAL_CHARTS_DIR="${original_core_charts_dir}"
@@ -577,24 +583,14 @@ _install_dip_release_local() {
         return 0
     fi
 
-    log_info "Installing ${release_name} from local chart: $(basename "${chart_tgz}")..."
+    local -a extra_args=()
+    helm_release_build_extra_args extra_args \
+        "${DIP_VERSION_MANIFEST_FILE:-}" "kweaver-dip" "${HELM_CHART_VERSION:-}" \
+        "${release_name}" "${DIP_REGISTRY:-}" || return 1
 
-    local -a helm_args=(
-        "upgrade" "--install" "${release_name}"
-        "${chart_tgz}"
-        "--namespace" "${namespace}"
-        "-f" "${CONFIG_YAML_PATH}"
-        "--wait" "--timeout=600s"
-    )
-
-    _dip_append_release_extra_helm_args "${release_name}" helm_args || return 1
-
-    if helm "${helm_args[@]}"; then
-        log_info "✓ ${release_name} installed successfully"
-    else
-        log_error "✗ Failed to install ${release_name}"
-        return 1
-    fi
+    helm_release_install_from_local \
+        "${release_name}" "${chart_tgz}" "${namespace}" \
+        "${CONFIG_YAML_PATH}" extra_args
 }
 
 # Install a single DIP release from a Helm repository or OCI registry
@@ -605,65 +601,15 @@ _install_dip_release_repo() {
     local helm_repo_name_or_url="$4"
     local release_version="$5"
 
-    # Detect if helm_repo_name_or_url is an OCI URL
-    local is_oci=false
-    local oci_base_url=""
-    if [[ "${helm_repo_name_or_url}" == oci://* ]]; then
-        is_oci=true
-        oci_base_url="${helm_repo_name_or_url}"
-    fi
+    local -a extra_args=()
+    helm_release_build_extra_args extra_args \
+        "${DIP_VERSION_MANIFEST_FILE:-}" "kweaver-dip" "${HELM_CHART_VERSION:-}" \
+        "${release_name}" "${DIP_REGISTRY:-}" || return 1
 
-    local target_version="${release_version}"
-    if [[ -z "${target_version}" ]]; then
-        if [[ "${is_oci}" == "true" ]]; then
-            log_error "OCI charts require explicit version. Please provide version in manifest"
-            return 1
-        fi
-        target_version=$(get_repo_chart_latest_version "${helm_repo_name_or_url}" "${chart_name}")
-    fi
-
-    if should_skip_upgrade_same_chart_version "${release_name}" "${namespace}" "${chart_name}" "${target_version}"; then
-        return 0
-    fi
-
-    # Clean up any pending state before installing
-    local current_status
-    current_status=$(helm status "${release_name}" -n "${namespace}" -o json 2>/dev/null | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
-    if [[ -n "${current_status}" && "${current_status}" != "deployed" && "${current_status}" != "failed" ]]; then
-        log_info "Cleaning up ${release_name} (status: ${current_status})..."
-        helm uninstall "${release_name}" -n "${namespace}" 2>/dev/null || true
-    fi
-
-    local chart_ref
-    if [[ "${is_oci}" == "true" ]]; then
-        chart_ref="${oci_base_url}/${chart_name}"
-        log_info "Installing ${release_name} from OCI registry..."
-    else
-        chart_ref="${helm_repo_name_or_url}/${chart_name}"
-        log_info "Installing ${release_name} from repo..."
-    fi
-
-    local -a helm_args=(
-        "upgrade" "--install" "${release_name}"
-        "${chart_ref}"
-        "--namespace" "${namespace}"
-        "-f" "${CONFIG_YAML_PATH}"
-    )
-
-    _dip_append_release_extra_helm_args "${release_name}" helm_args || return 1
-
-    if [[ -n "${release_version}" ]]; then
-        helm_args+=("--version" "${release_version}")
-    fi
-
-    helm_args+=("--devel" "--wait" "--timeout=600s")
-
-    if helm "${helm_args[@]}"; then
-        log_info "✓ ${release_name} installed successfully"
-    else
-        log_error "✗ Failed to install ${release_name}"
-        return 1
-    fi
+    helm_release_install_from_repo \
+        "${release_name}" "${chart_name}" "${namespace}" \
+        "${helm_repo_name_or_url}" "${release_version}" \
+        "${CONFIG_YAML_PATH}" extra_args
 }
 
 # Uninstall DIP services

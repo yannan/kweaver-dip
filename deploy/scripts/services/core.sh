@@ -96,6 +96,14 @@ parse_core_args() {
                 CORE_SET_VALUES+=("$2")
                 shift 2
                 ;;
+            --registry=*)
+                # Global registry parameter, handled by main script
+                shift
+                ;;
+            --registry)
+                # Global registry parameter, handled by main script
+                shift 2
+                ;;
             *)
                 log_error "Unknown argument: $1"
                 return 1
@@ -222,21 +230,14 @@ download_core() {
     ensure_helm_available
     _core_require_version_manifest || return 1
 
-    # Read helmRepoUrl from manifest if available
-    local manifest_helm_repo_url=""
-    if [[ -n "${CORE_VERSION_MANIFEST_FILE:-}" ]]; then
-        manifest_helm_repo_url="$(get_release_manifest_helm_repo_url "${CORE_VERSION_MANIFEST_FILE}")"
-    fi
-
-    # Use manifest helmRepoUrl if present, otherwise fall back to env vars
-    local helm_repo_url="${manifest_helm_repo_url:-${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}}"
-    local helm_repo_name_or_url="${helm_repo_url}"
-
-    # If not OCI URL, use repo name format
-    if [[ "${helm_repo_url}" != oci://* ]]; then
-        HELM_CHART_REPO_NAME="${HELM_CHART_REPO_NAME:-kweaver}"
-        helm_repo_name_or_url="${HELM_CHART_REPO_NAME}"
-    fi
+    local helm_repo_url=""
+    local helm_repo_name_or_url=""
+    helm_release_resolve_repo \
+        "${CORE_VERSION_MANIFEST_FILE:-}" \
+        "${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}" \
+        "${HELM_CHART_REPO_NAME:-kweaver}" \
+        "${CORE_REGISTRY:-}" \
+        helm_repo_url helm_repo_name_or_url
 
     local charts_dir
     charts_dir="$(_core_download_charts_dir)"
@@ -285,7 +286,12 @@ download_core() {
     for release_name in "${release_names[@]}"; do
         release_version="$(_core_resolve_release_version "${release_name}")"
         chart_name="$(_core_resolve_chart_name "${release_name}")"
-        download_chart_to_cache "${charts_dir}" "${helm_repo_name_or_url}" "${chart_name}" "${release_version}" "${FORCE_REFRESH_CHARTS:-false}"
+        local per_release_repo="${helm_repo_name_or_url}"
+        helm_release_resolve_per_release_repo \
+            "${CORE_VERSION_MANIFEST_FILE:-}" "kweaver-core" "${HELM_CHART_VERSION:-}" \
+            "${release_name}" "${helm_repo_name_or_url}" "${CORE_REGISTRY:-}" \
+            per_release_repo
+        download_chart_to_cache "${charts_dir}" "${per_release_repo}" "${chart_name}" "${release_version}" "${FORCE_REFRESH_CHARTS:-false}"
     done
 }
 
@@ -329,27 +335,18 @@ _install_core_release_local() {
         return 0
     fi
 
-    log_info "Installing ${release_name} from local chart: $(basename "${chart_tgz}")..."
-
-    local -a helm_args=(
-        "upgrade" "--install" "${release_name}" "${chart_tgz}"
-        "--namespace" "${namespace}"
-        "-f" "${CONFIG_YAML_PATH}"
-        "--wait" "--timeout=600s"
-    )
-
-    # Add all --set values
+    local -a extra_args=()
+    helm_release_build_extra_args extra_args \
+        "${CORE_VERSION_MANIFEST_FILE:-}" "kweaver-core" "${HELM_CHART_VERSION:-}" \
+        "${release_name}" "${CORE_REGISTRY:-}" || return 1
     local set_value
     for set_value in "${CORE_SET_VALUES[@]}"; do
-        helm_args+=("--set" "${set_value}")
+        extra_args+=("--set" "${set_value}")
     done
 
-    if helm "${helm_args[@]}"; then
-        log_info "✓ ${release_name} installed successfully"
-    else
-        log_error "✗ Failed to install ${release_name}"
-        return 1
-    fi
+    helm_release_install_from_local \
+        "${release_name}" "${chart_tgz}" "${namespace}" \
+        "${CONFIG_YAML_PATH}" extra_args
 }
 
 # Install a single kweaver-core release from a Helm repository or OCI registry
@@ -361,69 +358,19 @@ _install_core_release_repo() {
     local chart_name
     chart_name="$(_core_resolve_chart_name "${release_name}")"
 
-    # Detect if helm_repo_name_or_url is an OCI URL
-    local is_oci=false
-    local oci_base_url=""
-    if [[ "${helm_repo_name_or_url}" == oci://* ]]; then
-        is_oci=true
-        oci_base_url="${helm_repo_name_or_url}"
-    fi
-
-    local chart_ref
-    if [[ "${is_oci}" == "true" ]]; then
-        chart_ref="${oci_base_url}/${chart_name}"
-    else
-        chart_ref="${helm_repo_name_or_url}/${chart_name}"
-    fi
-
-    local target_version="${release_version}"
-    if [[ -z "${target_version}" ]]; then
-        if [[ "${is_oci}" == "true" ]]; then
-            log_error "OCI charts require explicit version. Please provide version in manifest"
-            return 1
-        fi
-        target_version=$(get_repo_chart_latest_version "${helm_repo_name_or_url}" "${chart_name}")
-    fi
-
-    if should_skip_upgrade_same_chart_version "${release_name}" "${namespace}" "${chart_name}" "${target_version}"; then
-        return 0
-    fi
-
-    # Clean up any pending state before installing
-    local current_status
-    current_status=$(helm status "${release_name}" -n "${namespace}" -o json 2>/dev/null | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
-    if [[ -n "${current_status}" && "${current_status}" != "deployed" && "${current_status}" != "failed" ]]; then
-        log_info "Cleaning up ${release_name} (status: ${current_status})..."
-        helm uninstall "${release_name}" -n "${namespace}" 2>/dev/null || true
-    fi
-
-    log_info "Installing ${release_name} from ${chart_ref}..."
-
-    local -a helm_args=(
-        "upgrade" "--install" "${release_name}"
-        "${chart_ref}"
-        "--namespace" "${namespace}"
-        "-f" "${CONFIG_YAML_PATH}"
-    )
-
-    if [[ -n "${release_version}" ]]; then
-        helm_args+=("--version" "${release_version}")
-    fi
-
-    helm_args+=("--devel")
-
-    # Add all --set values
+    local -a extra_args=()
+    helm_release_build_extra_args extra_args \
+        "${CORE_VERSION_MANIFEST_FILE:-}" "kweaver-core" "${HELM_CHART_VERSION:-}" \
+        "${release_name}" "${CORE_REGISTRY:-}" || return 1
     local set_value
     for set_value in "${CORE_SET_VALUES[@]}"; do
-        helm_args+=("--set" "${set_value}")
+        extra_args+=("--set" "${set_value}")
     done
 
-    if helm "${helm_args[@]}"; then
-        log_info "✓ ${release_name} installed successfully"
-    else
-        log_error "✗ Failed to install ${release_name}"
-        return 1
-    fi
+    helm_release_install_from_repo \
+        "${release_name}" "${chart_name}" "${namespace}" \
+        "${helm_repo_name_or_url}" "${release_version}" \
+        "${CONFIG_YAML_PATH}" extra_args
 }
 
 # Install KWeaver Core services via Helm
@@ -451,21 +398,13 @@ install_core() {
         use_local=true
         log_info "Using local Core charts from: ${charts_dir}"
     else
-        # Read helmRepoUrl from manifest if available
-        local manifest_helm_repo_url=""
-        if [[ -n "${CORE_VERSION_MANIFEST_FILE:-}" ]]; then
-            manifest_helm_repo_url="$(get_release_manifest_helm_repo_url "${CORE_VERSION_MANIFEST_FILE}")"
-        fi
-
-        # Use manifest helmRepoUrl if present, otherwise fall back to env vars
-        local helm_repo_url="${manifest_helm_repo_url:-${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}}"
-        helm_repo_name_or_url="${helm_repo_url}"
-
-        # If not OCI URL, use repo name format
-        if [[ "${helm_repo_url}" != oci://* ]]; then
-            HELM_CHART_REPO_NAME="${HELM_CHART_REPO_NAME:-kweaver}"
-            helm_repo_name_or_url="${HELM_CHART_REPO_NAME}"
-        fi
+        local helm_repo_url=""
+        helm_release_resolve_repo \
+            "${CORE_VERSION_MANIFEST_FILE:-}" \
+            "${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}" \
+            "${HELM_CHART_REPO_NAME:-kweaver}" \
+            "${CORE_REGISTRY:-}" \
+            helm_repo_url helm_repo_name_or_url
 
         log_info "No explicit local Core charts directory provided, using Helm repo."
         log_info "  Version:   ${HELM_CHART_VERSION}"
@@ -534,7 +473,12 @@ install_core() {
         if [[ "${use_local}" == "true" ]]; then
             _install_core_release_local "${release_name}" "${charts_dir}" "${namespace}"
         else
-            _install_core_release_repo "${release_name}" "${namespace}" "${helm_repo_name_or_url}" "${release_version}"
+            local per_release_repo="${helm_repo_name_or_url}"
+            helm_release_resolve_per_release_repo \
+                "${CORE_VERSION_MANIFEST_FILE:-}" "kweaver-core" "${HELM_CHART_VERSION:-}" \
+                "${release_name}" "${helm_repo_name_or_url}" "${CORE_REGISTRY:-}" \
+                per_release_repo
+            _install_core_release_repo "${release_name}" "${namespace}" "${per_release_repo}" "${release_version}"
         fi
     done
 

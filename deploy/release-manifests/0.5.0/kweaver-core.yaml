@@ -5,6 +5,7 @@ version: 0.5.0
 source:
   helmRepoName: kweaver
   helmRepoUrl: https://kweaver-ai.github.io/helm-repo/
+  imageRegistry: swr.cn-east-3.myhuaweicloud.com/kweaver-ai
 dependencies:
 - product: isf
   version: 0.5.0

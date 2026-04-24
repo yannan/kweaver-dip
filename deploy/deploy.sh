@@ -12,6 +12,7 @@ HELM_INSTALL_SCRIPT_PATH="${SCRIPT_DIR}/conf/get-helm-3"
 
 # Source all service libraries
 source "${SCRIPT_DIR}/scripts/lib/common.sh"
+source "${SCRIPT_DIR}/scripts/lib/helm_release.sh"
 source "${SCRIPT_DIR}/scripts/services/config.sh"
 source "${SCRIPT_DIR}/scripts/services/k8s.sh"
 source "${SCRIPT_DIR}/scripts/services/storage.sh"
@@ -108,6 +109,8 @@ usage() {
     echo "                                install only uses local charts when this option is explicitly set"
     echo "  --version_file=<path>         Use an aggregate release manifest to resolve exact chart versions"
     echo "                                (default auto path: deploy/release-manifests/<version>/<product>.yaml)"
+    echo "  --registry=<url>              Override OCI chart and container image registry"
+    echo "                                Example: --registry=swr.cn-east-3.myhuaweicloud.com/kweaver-ai"
     echo "  --confirm-missing-openclaw-paths"
     echo "                                Continue DIP install when dipStudio OpenClaw host paths are configured"
     echo "                                but missing on disk. Only applies to the dip-studio chart."
@@ -283,11 +286,41 @@ confirm_access_address_before_install() {
 }
 
 
+# Parse global arguments
+parse_global_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --version_file=*)
+                GLOBAL_VERSION_FILE="${1#*=}"
+                shift
+                ;;
+            --version_file)
+                GLOBAL_VERSION_FILE="$2"
+                shift 2
+                ;;
+            --registry=*)
+                GLOBAL_REGISTRY="${1#*=}"
+                shift
+                ;;
+            --registry)
+                GLOBAL_REGISTRY="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+}
+
 # Main function
 main() {
     local module="${1:-}"
     local action="${2:-}"
     shift 2 2>/dev/null || true
+
+    # Parse global arguments first
+    parse_global_args "$@"
 
     # If no arguments, show usage
     if [[ -z "${module}" ]]; then
@@ -523,11 +556,27 @@ main() {
     if [[ "${module}" == "kweaver-core" ]] || [[ "${module}" == "core" ]]; then
         case "${action}" in
             install|init)
+                # Set global version file if provided
+                if [[ -n "${GLOBAL_VERSION_FILE:-}" ]]; then
+                    export CORE_VERSION_MANIFEST_FILE="${GLOBAL_VERSION_FILE}"
+                fi
+                # Set global registry if provided
+                if [[ -n "${GLOBAL_REGISTRY:-}" ]]; then
+                    export CORE_REGISTRY="${GLOBAL_REGISTRY}"
+                fi
                 parse_core_args "install" "$@"
                 confirm_access_address_before_install
                 install_core
                 ;;
             download)
+                # Set global version file if provided
+                if [[ -n "${GLOBAL_VERSION_FILE:-}" ]]; then
+                    export CORE_VERSION_MANIFEST_FILE="${GLOBAL_VERSION_FILE}"
+                fi
+                # Set global registry if provided
+                if [[ -n "${GLOBAL_REGISTRY:-}" ]]; then
+                    export CORE_REGISTRY="${GLOBAL_REGISTRY}"
+                fi
                 parse_core_args "download" "$@"
                 download_core
                 ;;
@@ -553,12 +602,30 @@ main() {
         case "${action}" in
             install|init)
                 check_root
+                # Parse args but don't override DIP_VERSION_MANIFEST_FILE if already set
                 parse_dip_args "install" "$@"
+                # Set global version file if provided (after parse_dip_args to override)
+                if [[ -n "${GLOBAL_VERSION_FILE:-}" ]]; then
+                    export DIP_VERSION_MANIFEST_FILE="${GLOBAL_VERSION_FILE}"
+                fi
+                # Set global registry if provided
+                if [[ -n "${GLOBAL_REGISTRY:-}" ]]; then
+                    export DIP_REGISTRY="${GLOBAL_REGISTRY}"
+                fi
                 confirm_access_address_before_install
                 install_dip
                 ;;
             download)
+                # Parse args but don't override DIP_VERSION_MANIFEST_FILE if already set
                 parse_dip_args "download" "$@"
+                # Set global version file if provided (after parse_dip_args to override)
+                if [[ -n "${GLOBAL_VERSION_FILE:-}" ]]; then
+                    export DIP_VERSION_MANIFEST_FILE="${GLOBAL_VERSION_FILE}"
+                fi
+                # Set global registry if provided
+                if [[ -n "${GLOBAL_REGISTRY:-}" ]]; then
+                    export DIP_REGISTRY="${GLOBAL_REGISTRY}"
+                fi
                 download_dip
                 ;;
             uninstall)
@@ -583,10 +650,26 @@ main() {
     if [[ "${module}" == "isf" ]]; then
         case "${action}" in
             install|init)
+                # Set global version file if provided
+                if [[ -n "${GLOBAL_VERSION_FILE:-}" ]]; then
+                    export ISF_VERSION_MANIFEST_FILE="${GLOBAL_VERSION_FILE}"
+                fi
+                # Set global registry if provided
+                if [[ -n "${GLOBAL_REGISTRY:-}" ]]; then
+                    export ISF_REGISTRY="${GLOBAL_REGISTRY}"
+                fi
                 parse_isf_args "install" "$@"
                 install_isf
                 ;;
             download)
+                # Set global version file if provided
+                if [[ -n "${GLOBAL_VERSION_FILE:-}" ]]; then
+                    export ISF_VERSION_MANIFEST_FILE="${GLOBAL_VERSION_FILE}"
+                fi
+                # Set global registry if provided
+                if [[ -n "${GLOBAL_REGISTRY:-}" ]]; then
+                    export ISF_REGISTRY="${GLOBAL_REGISTRY}"
+                fi
                 parse_isf_args "download" "$@"
                 download_isf
                 ;;

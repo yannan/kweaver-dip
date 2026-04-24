@@ -329,9 +329,20 @@ _manifest_read_top_level_value() {
     local manifest_file="$1"
     local key="$2"
 
-    awk -F': ' -v key="${key}" '
-        $1 == key { print $2; exit }
-    ' "${manifest_file}" | sed 's/[[:space:]]*$//'
+    # Handle nested keys like "source.helmRepoUrl"
+    if [[ "${key}" == *.* ]]; then
+        local parent_key="${key%%.*}"
+        local child_key="${key#*.}"
+        awk -v parent="${parent_key}" -v child="${child_key}" '
+            $1 == parent ":" { in_parent=1; next }
+            in_parent && $1 == child ":" { print $2; exit }
+            in_parent && /^[^ ]/ { in_parent=0 }
+        ' "${manifest_file}" | sed 's/[[:space:]]*$//'
+    else
+        awk -v key="${key}" '
+            $1 == key ":" { print $2; exit }
+        ' "${manifest_file}" | sed 's/[[:space:]]*$//'
+    fi
 }
 
 _manifest_validate_identity() {
@@ -650,6 +661,32 @@ get_release_manifest_release_stage() {
     esac
 }
 
+# Get one release's per-release helmRepoUrl override from a release manifest.
+# Returns empty if not set (caller should fall back to source.helmRepoUrl).
+# Args: <manifest_file> <expected_product> <aggregate_version> <release_name>
+get_release_manifest_release_helm_repo_url() {
+    local manifest_file="$1"
+    local expected_product="$2"
+    local aggregate_version="${3:-}"
+    local release_name="$4"
+
+    _manifest_validate_identity "${manifest_file}" "${expected_product}" "${aggregate_version}" || return 1
+    _manifest_strip_quotes "$(_manifest_read_release_field "${manifest_file}" "${release_name}" "helmRepoUrl")"
+}
+
+# Get one release's per-release imageRegistry override from a release manifest.
+# Returns empty if not set (caller should fall back to source.imageRegistry).
+# Args: <manifest_file> <expected_product> <aggregate_version> <release_name>
+get_release_manifest_release_image_registry() {
+    local manifest_file="$1"
+    local expected_product="$2"
+    local aggregate_version="${3:-}"
+    local release_name="$4"
+
+    _manifest_validate_identity "${manifest_file}" "${expected_product}" "${aggregate_version}" || return 1
+    _manifest_strip_quotes "$(_manifest_read_release_field "${manifest_file}" "${release_name}" "imageRegistry")"
+}
+
 # Get one dependency's aggregate version from a release manifest.
 # Args: <manifest_file> <dependency_product>
 get_release_manifest_dependency_version() {
@@ -737,7 +774,19 @@ get_release_manifest_helm_repo_url() {
     [[ -f "${manifest_file}" ]] || return 0
 
     local value
-    value="$(_manifest_strip_quotes "$(_manifest_read_top_level_value "${manifest_file}" "helmRepoUrl")")"
+    value="$(_manifest_strip_quotes "$(_manifest_read_top_level_value "${manifest_file}" "source.helmRepoUrl")")"
+    echo "${value}"
+}
+
+# Get the imageRegistry from a release manifest.
+# Args: <manifest_file>
+get_release_manifest_image_registry() {
+    local manifest_file="$1"
+
+    [[ -f "${manifest_file}" ]] || return 0
+
+    local value
+    value="$(_manifest_strip_quotes "$(_manifest_read_top_level_value "${manifest_file}" "source.imageRegistry")")"
     echo "${value}"
 }
 

@@ -82,6 +82,14 @@ parse_isf_args() {
                 FORCE_REFRESH_CHARTS="true"
                 shift
                 ;;
+            --registry=*)
+                # Global registry parameter, handled by main script
+                shift
+                ;;
+            --registry)
+                # Global registry parameter, handled by main script
+                shift 2
+                ;;
             *)
                 log_error "Unknown argument: $1"
                 return 1
@@ -202,21 +210,13 @@ install_isf() {
         use_local=true
         log_info "Using local ISF charts from: ${charts_dir}"
     else
-        # Read helmRepoUrl from manifest if available
-        local manifest_helm_repo_url=""
-        if [[ -n "${ISF_VERSION_MANIFEST_FILE:-}" ]]; then
-            manifest_helm_repo_url="$(get_release_manifest_helm_repo_url "${ISF_VERSION_MANIFEST_FILE}")"
-        fi
-
-        # Use manifest helmRepoUrl if present, otherwise fall back to env vars
-        local helm_repo_url="${manifest_helm_repo_url:-${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}}"
-        helm_repo_name_or_url="${helm_repo_url}"
-
-        # If not OCI URL, use repo name format
-        if [[ "${helm_repo_url}" != oci://* ]]; then
-            HELM_CHART_REPO_NAME="${HELM_CHART_REPO_NAME:-kweaver}"
-            helm_repo_name_or_url="${HELM_CHART_REPO_NAME}"
-        fi
+        local helm_repo_url=""
+        helm_release_resolve_repo \
+            "${ISF_VERSION_MANIFEST_FILE:-}" \
+            "${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}" \
+            "${HELM_CHART_REPO_NAME:-kweaver}" \
+            "${ISF_REGISTRY:-}" \
+            helm_repo_url helm_repo_name_or_url
 
         log_info "No explicit local ISF charts directory provided, using Helm repo."
         log_info "  Helm Repo: ${helm_repo_name_or_url} -> ${helm_repo_url}"
@@ -257,9 +257,16 @@ install_isf() {
                 install_failed=1
                 break
             fi
-        elif ! install_isf_release "${release_name}" "${chart_name}" "${namespace}" "${helm_repo_name_or_url}" "${release_version}" "${temp_config}"; then
-            install_failed=1
-            break
+        else
+            local per_release_repo="${helm_repo_name_or_url}"
+            helm_release_resolve_per_release_repo \
+                "${ISF_VERSION_MANIFEST_FILE:-}" "isf" "${HELM_CHART_VERSION:-}" \
+                "${release_name}" "${helm_repo_name_or_url}" "${ISF_REGISTRY:-}" \
+                per_release_repo
+            if ! install_isf_release "${release_name}" "${chart_name}" "${namespace}" "${per_release_repo}" "${release_version}" "${temp_config}"; then
+                install_failed=1
+                break
+            fi
         fi
     done
     
@@ -314,11 +321,14 @@ _install_isf_release_local() {
         return 0
     fi
 
-    log_info "Installing ${release_name} from local chart: $(basename "${chart_tgz}")..."
-    helm upgrade --install "${release_name}" "${chart_tgz}" \
-        --namespace "${namespace}" \
-        -f "${values_file}" \
-        --devel --wait --timeout=600s
+    local -a extra_args=()
+    helm_release_build_extra_args extra_args \
+        "${ISF_VERSION_MANIFEST_FILE:-}" "isf" "${HELM_CHART_VERSION:-}" \
+        "${release_name}" "${ISF_REGISTRY:-}" || return 1
+
+    helm_release_install_from_local \
+        "${release_name}" "${chart_tgz}" "${namespace}" \
+        "${values_file}" extra_args
 }
 
 # Install a single ISF release
@@ -332,57 +342,15 @@ install_isf_release() {
 
     log_info "Installing ${release_name}..."
 
-    # Detect if helm_repo_name_or_url is an OCI URL
-    local is_oci=false
-    local oci_base_url=""
-    if [[ "${helm_repo_name_or_url}" == oci://* ]]; then
-        is_oci=true
-        oci_base_url="${helm_repo_name_or_url}"
-    fi
+    local -a extra_args=()
+    helm_release_build_extra_args extra_args \
+        "${ISF_VERSION_MANIFEST_FILE:-}" "isf" "${HELM_CHART_VERSION:-}" \
+        "${release_name}" "${ISF_REGISTRY:-}" || return 1
 
-    # Build Helm chart reference
-    local chart_ref
-    if [[ "${is_oci}" == "true" ]]; then
-        chart_ref="${oci_base_url}/${chart_name}"
-    else
-        chart_ref="${helm_repo_name_or_url}/${chart_name}"
-    fi
-
-    local target_version="${release_version}"
-    if [[ -z "${target_version}" ]]; then
-        if [[ "${is_oci}" == "true" ]]; then
-            log_error "OCI charts require explicit version. Please provide version in manifest"
-            return 1
-        fi
-        target_version=$(get_repo_chart_latest_version "${helm_repo_name_or_url}" "${chart_name}")
-    fi
-
-    if should_skip_upgrade_same_chart_version "${release_name}" "${namespace}" "${chart_name}" "${target_version}"; then
-        return 0
-    fi
-    
-    # Build Helm command
-    local -a helm_args=(
-        "upgrade" "--install" "${release_name}"
-        "${chart_ref}"
-        "--namespace" "${namespace}"
-        "-f" "${values_file}"
-    )
-    
-    # Add version parameter only if specified
-    if [[ -n "${release_version}" ]]; then
-        helm_args+=("--version" "${release_version}")
-    fi
-    
-    helm_args+=("--devel" "--wait" "--timeout=600s")
-    
-    # Execute Helm install/upgrade
-    if helm "${helm_args[@]}"; then
-        log_info "✓ ${release_name} installed successfully"
-    else
-        log_error "✗ Failed to install ${release_name}"
-        return 1
-    fi
+    helm_release_install_from_repo \
+        "${release_name}" "${chart_name}" "${namespace}" \
+        "${helm_repo_name_or_url}" "${release_version}" \
+        "${values_file}" extra_args
 }
 
 download_isf() {
@@ -390,21 +358,14 @@ download_isf() {
     ensure_helm_available
     _isf_require_version_manifest || return 1
 
-    # Read helmRepoUrl from manifest if available
-    local manifest_helm_repo_url=""
-    if [[ -n "${ISF_VERSION_MANIFEST_FILE:-}" ]]; then
-        manifest_helm_repo_url="$(get_release_manifest_helm_repo_url "${ISF_VERSION_MANIFEST_FILE}")"
-    fi
-
-    # Use manifest helmRepoUrl if present, otherwise fall back to env vars
-    local helm_repo_url="${manifest_helm_repo_url:-${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}}"
-    local helm_repo_name_or_url="${helm_repo_url}"
-
-    # If not OCI URL, use repo name format
-    if [[ "${helm_repo_url}" != oci://* ]]; then
-        HELM_CHART_REPO_NAME="${HELM_CHART_REPO_NAME:-kweaver}"
-        helm_repo_name_or_url="${HELM_CHART_REPO_NAME}"
-    fi
+    local helm_repo_url=""
+    local helm_repo_name_or_url=""
+    helm_release_resolve_repo \
+        "${ISF_VERSION_MANIFEST_FILE:-}" \
+        "${HELM_CHART_REPO_URL:-https://kweaver-ai.github.io/helm-repo/}" \
+        "${HELM_CHART_REPO_NAME:-kweaver}" \
+        "${ISF_REGISTRY:-}" \
+        helm_repo_url helm_repo_name_or_url
 
     local charts_dir
     charts_dir="$(_isf_download_charts_dir)"
@@ -416,7 +377,12 @@ download_isf() {
     for release_name in "${release_names[@]}"; do
         release_version="$(_isf_resolve_release_version "${release_name}")"
         chart_name="$(_isf_resolve_chart_name "${release_name}")"
-        download_chart_to_cache "${charts_dir}" "${helm_repo_name_or_url}" "${chart_name}" "${release_version}" "${FORCE_REFRESH_CHARTS:-false}"
+        local per_release_repo="${helm_repo_name_or_url}"
+        helm_release_resolve_per_release_repo \
+            "${ISF_VERSION_MANIFEST_FILE:-}" "isf" "${HELM_CHART_VERSION:-}" \
+            "${release_name}" "${helm_repo_name_or_url}" "${ISF_REGISTRY:-}" \
+            per_release_repo
+        download_chart_to_cache "${charts_dir}" "${per_release_repo}" "${chart_name}" "${release_version}" "${FORCE_REFRESH_CHARTS:-false}"
     done
 }
 

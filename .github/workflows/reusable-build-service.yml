@@ -71,27 +71,44 @@ jobs:
           COMMIT_TS="$(TZ=UTC git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)"
           SHOULD_PUSH_LATEST="false"
 
-          CHART_VERSION="$(
-            grep -m1 -E '^version:' "${CHART_DIR}/Chart.yaml" \
-              | awk '{print $2}' | tr -d '"' | tr -d "'" | tr -d '\r'
-          )"
-          if [ -z "${CHART_VERSION}" ]; then
-            echo "ERROR: unable to read version from ${CHART_DIR}/Chart.yaml" >&2
+          # Resolve the base version (single source of truth).
+          # Priority: git tag > repo-root VERSION file > chart Chart.yaml (fallback).
+          # The repo-root VERSION file is the canonical place to bump the whole
+          # product line; individual Chart.yaml files should NOT be edited per
+          # release (the helm-chart job rewrites them from RELEASE_TAG at package time).
+          BASE_VERSION=""
+          VERSION_SOURCE=""
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            BASE_VERSION="${GITHUB_REF_NAME#v}"
+            VERSION_SOURCE="git-tag(${GITHUB_REF_NAME})"
+          elif [ -f "${GITHUB_WORKSPACE}/VERSION" ]; then
+            BASE_VERSION="$(tr -d '[:space:]' < "${GITHUB_WORKSPACE}/VERSION")"
+            VERSION_SOURCE="VERSION file"
+          fi
+          if [ -z "${BASE_VERSION}" ]; then
+            BASE_VERSION="$(
+              grep -m1 -E '^version:' "${CHART_DIR}/Chart.yaml" \
+                | awk '{print $2}' | tr -d '"' | tr -d "'" | tr -d '\r'
+            )"
+            VERSION_SOURCE="Chart.yaml fallback"
+          fi
+          if [ -z "${BASE_VERSION}" ]; then
+            echo "ERROR: unable to resolve base version (no tag, no VERSION file, no Chart.yaml version)" >&2
             exit 1
           fi
+          echo "Base version: ${BASE_VERSION} (source: ${VERSION_SOURCE})"
 
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            RELEASE_VERSION="${GITHUB_REF_NAME#v}"
-            RELEASE_TAG="${RELEASE_VERSION}-${SHORT_SHA}"
-            RELEASE_TAG_NO_SHA="${RELEASE_VERSION}"
+            RELEASE_TAG="${BASE_VERSION}-${SHORT_SHA}"
+            RELEASE_TAG_NO_SHA="${BASE_VERSION}"
           else
             BRANCH_OR_REF="${GITHUB_REF_NAME//\//-}"
-            # Format: <chartVer>-<branch>.<UTC-commit-timestamp>.<shortSha>
+            # Format: <baseVer>-<branch>.<UTC-commit-timestamp>.<shortSha>
             # Timestamp as a numeric SemVer pre-release identifier makes tags
             # sortable by commit time via `sort -V`, so release-manifest
             # workflows can discover the latest chart on OCI deterministically.
-            RELEASE_TAG="${CHART_VERSION}-${BRANCH_OR_REF}.${COMMIT_TS}.${SHORT_SHA}"
-            RELEASE_TAG_NO_SHA="${CHART_VERSION}-${BRANCH_OR_REF}"
+            RELEASE_TAG="${BASE_VERSION}-${BRANCH_OR_REF}.${COMMIT_TS}.${SHORT_SHA}"
+            RELEASE_TAG_NO_SHA="${BASE_VERSION}-${BRANCH_OR_REF}"
           fi
 
           if [ "${GITHUB_REF_NAME}" = "main" ] || [ "${WORKFLOW_PUSH_LATEST:-false}" = "true" ]; then
