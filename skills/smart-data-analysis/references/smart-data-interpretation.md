@@ -117,11 +117,11 @@
 ### 7. 局限与下一步（必须）
 
 - 明确指出当前输入无法支持的结论（例如缺少对比期、缺少关键维度、结果被 TopN 截断等）
-- 给出最小增量的“下一步取数清单”（以可 SQL 表达为准；由 `smart-data-analysis` 路由回 `smart-ask-data` 或 `smart-attribution-analysis` 执行）
+- 给出最小增量的“下一步取数清单”（以可 SQL 表达为准；由 `smart-data-analysis` 路由回 `smart-ask-data` 单次取数，或 **`smart-data-insights` 归因分析子场景**（[`attribution_analysis.md`](attribution_analysis.md)）做多子问题编排）
 
 ---
 
 ## 适用与不适用（路由提示）
 
 - 适用：用户说“解读/分析这份取数结果”“帮我看趋势/异常/贡献/建议”，且**不要求新增取数**。
-- 不适用：用户要“归因分析报告/系统性原因拆解/多维度下钻”，需要多子问题取数与证据包 → 应由 `smart-data-analysis` 路由到 `smart-attribution-analysis`（取数）并再交给 `smart-reporting`（报告）。
+- 不适用：用户要“归因分析报告/系统性原因拆解/多维度下钻”，需要多子问题取数与证据包 → 应由 `smart-data-analysis` 路由到 **`smart-data-insights`**（启用 [`attribution_analysis.md`](attribution_analysis.md)）完成取数与证据包，并再交给 `smart-reporting`（`attribution_analysis_report`）组装报告。

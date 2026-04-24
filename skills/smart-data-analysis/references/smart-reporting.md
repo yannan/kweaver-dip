@@ -2,11 +2,11 @@
 
 > **维护说明**：本文为报告子技能**完整正文**（在此目录统一维护）。**总编排入口**：[`../SKILL.md`](../SKILL.md)。
 
-本 skill 的定位是：**把“找表结果 / 单次取数结果 / 数据洞察最终交付 / 归因分析最终交付”写成一份可交付、可复核的报告**。它**不执行**任何检索、SQL或代码计算；**只消费输入**（即你已经从 `smart-search-tables` / `smart-ask-data` / `smart-data-insights` / `smart-attribution-analysis` 拿到的结果）。
+本 skill 的定位是：**把“找表结果 / 单次取数结果 / 数据洞察最终交付 / 归因分析最终交付”写成一份可交付、可复核的报告**。它**不执行**任何检索、SQL或代码计算；**只消费输入**（即你已经从 `smart-search-tables` / `smart-ask-data` / `smart-data-insights`（含 **归因分析**子场景证据包）拿到的结果；若部署侧仍保留旧称 **`smart-attribution-analysis`**，以与之**同构的证据包**为准）。
 
 你可以把它理解为一个“报告写作层”：
 
-- 输入：来自 `smart-search-tables` / `smart-ask-data` / `smart-data-insights` / `smart-attribution-analysis` 的 **原始输出**（含表清单、职责要点、SQL、结果集、子问题证据、洞察结论等）
+- 输入：来自 `smart-search-tables` / `smart-ask-data` / `smart-data-insights` 的 **原始输出**（含表清单、职责要点、SQL、结果集、子问题证据、洞察结论、**归因证据包**等）
 - 输出：针对对应场景的一份**标准结构报告**（含“证据引用”与下一步建议）
 
 > 参考原则：本 skill **不具备**多子问题取数与归因编排能力；它只能基于“已给定的输出证据”写报告（包括归因分析已交付的多子问题证据）。报告内容必须基于真实数据，不能在没有数据支撑的情况下编造报告内容。
@@ -118,9 +118,9 @@
 
 ---
 
-### 场景 C：深度归因分析报告组装（`attribution_analysis_report`）
+### 场景 C：归因分析报告（`attribution_analysis_report`）
 
-输入应来自 `smart-attribution-analysis` 的最终交付原文（你可以理解为“归因分析链路已完成取数与出图，`smart-reporting` 只负责把它写成标准报告”），至少包含：
+输入应来自 **`smart-data-insights` 归因分析子场景**（[`attribution_analysis.md`](attribution_analysis.md)）的最终交付原文，或与该形态 **同构** 的归因证据包（你可以理解为“归因分析链路已完成取数与可选出图，`smart-reporting` 只负责把它写成标准报告”），至少包含：
 
 - **口径卡片**：指标定义、主体范围、时间窗口、本期/对比期、粒度、异常阈值（若归因分析输出已给）
 - **子问题清单（MECE）**：每个子问题至少包含：
@@ -153,7 +153,7 @@
 
 ## Mermaid 图表（可选，仅基于输入）
 
-本 skill **不调用** `json2plot` 等出图工具；若需可视化，使用 Markdown 代码块 **` ```mermaid `** … **` ``` `** 嵌入 Mermaid 源码，且**全部数据点**来自 `smart-search-tables` / `smart-ask-data` / `smart-data-insights` / `smart-attribution-analysis`（场景 `attribution_analysis_report` 的输入证据）的输入原文可复核。
+本 skill **不调用** `json2plot` 等出图工具；若需可视化，使用 Markdown 代码块 **` ```mermaid `** … **` ``` `** 嵌入 Mermaid 源码，且**全部数据点**来自 `smart-search-tables` / `smart-ask-data` / `smart-data-insights`（场景 `attribution_analysis_report` 的输入证据）的输入原文可复核。
 
 ### 何时加入图表（位置硬约束）
 
@@ -282,9 +282,9 @@
 
 ---
 
-### C. 归因分析报告框架（对应 `smart-attribution-analysis` 的“报告生成/组装输出”）
+### C. 归因分析报告框架（对应 **`smart-data-insights` 归因分析子场景** 完成取数后的“报告生成/组装输出”）
 
-> 说明：本节迁移自 `smart-attribution-analysis` 的“归因分析 + 报告组装”输出要求，但在 `smart-reporting` 中仅做**写作与组装**（不取数、不出图工具调用）。
+> 说明：归因取数编排已并入 `smart-data-insights`（见 [`attribution_analysis.md`](attribution_analysis.md)）；本节在 `smart-reporting` 中仅做**写作与组装**（不取数、不出图工具调用）。
 
 #### 报告结构（深度归因报告，推荐固定顺序）
 
@@ -315,7 +315,7 @@
 
 - **表格优先**：口径卡片、子问题清单、各子问题「结果数据」及可读性强的对比读数，**优先** Markdown **表格**（见「呈现形式（MUST：表格优先）」）。
 - **证据可复核**：任何根因/影响范围/建议的“依据数字”，必须能在输入的 SQL/结果/图中定位到。
-- **不代替编排取数**：若用户要新增子问题取数或重跑口径，应该回到 `smart-attribution-analysis` 执行层；本 skill 不做。
+- **不代替编排取数**：若用户要新增子问题取数或重跑口径，应该回到总入口路由的 `smart-data-insights`（归因子场景）与 `smart-ask-data` 执行层；本 skill 不做。
 - **图表位置同规**：若用 Mermaid 复画，仍必须“表下紧跟图”，不得在结论/附录之后再放图。
 
 ---
@@ -479,9 +479,9 @@ xychart-beta
 
 ---
 
-### 范例 3：深度归因分析报告组装（attribution_analysis_report）
+### 范例 3：归因分析报告（attribution_analysis_report）
 
-#### 报告摘要（深度归因示例）
+#### 报告摘要（归因分析示例）
 
 用户诉求：（示例占位）解释“某指标在本期相对对比期显著下滑”的原因，并给出建议。  
 本次输出：基于输入的多子问题证据（SQL+结果+图/表），归纳 1～5 条可验证根因，并给出对应建议（均可回指证据编号）。
@@ -603,7 +603,7 @@ LIMIT 20;
 /smart-reporting 场景=table_search；以下是 smart-search-tables 的最终交付结果：<粘贴原文或 JSON>
 /smart-reporting 场景=sql_query；以下是 smart-ask-data 的最终交付结果（含 SQL 与结果）：<粘贴原文或 JSON>
 /smart-reporting 场景=data_insights；以下是 smart-data-insights 的最终交付结果（含子场景清单/子问题证据/洞察结论）：<粘贴原文或 JSON>
-/smart-reporting 场景=attribution_analysis_report；以下是 smart-attribution-analysis 的最终交付结果（含口径卡片/子问题证据/结论建议）：<粘贴原文或 JSON>
+/smart-reporting 场景=attribution_analysis_report；以下是 smart-data-insights（归因分析子场景）的最终交付结果（含口径卡片/子问题证据/结论建议）：<粘贴原文或 JSON>
 ```
 
 生成报告时：在**不改动证据值**的前提下，**优先用 Markdown 表格**展示结果与可列表化口径（见上文「呈现形式（MUST：表格优先）」）。

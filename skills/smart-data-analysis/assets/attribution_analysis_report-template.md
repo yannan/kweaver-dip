@@ -1,6 +1,6 @@
 # 归因分析报告模板（`attribution_analysis_report`）
 
-> 规范见 [`../references/smart-reporting.md`](../references/smart-reporting.md)「C. 归因分析报告框架」。仅消费 `smart-attribution-analysis` **最终交付**；**不**取数；表格优先。  
+> 规范见 [`../references/smart-reporting.md`](../references/smart-reporting.md)「C. 归因分析报告框架」。仅消费 **`smart-data-insights` 归因分析子场景**（[`../references/attribution_analysis.md`](../references/attribution_analysis.md)）**最终交付**或与之同构的证据包；**不**取数；表格优先。  
 > 总编排：[`../SKILL.md`](../SKILL.md)
 
 **场景**：`attribution_analysis_report`  
