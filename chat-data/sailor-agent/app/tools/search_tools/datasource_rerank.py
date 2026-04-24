@@ -587,6 +587,14 @@ class DataSourceRerankTool(LLMTool):
         llm_out_dict = params.get("llm", {})
         if llm_out_dict.get("name"):
             llm_dict["model_name"] = llm_out_dict.get("name")
+		account_type = ..get("account_type", "user")
+		user_id = auth_dict.get("user_id", "")
+		llm_headers = {
+            "x-user": user_id,
+            "x-account-id": user_id,
+            "x-account-type": account_type
+        }
+		llm_dict["default_headers"] = headers
         llm = CustomChatOpenAI(**llm_dict)
 
         auth_dict = params.get("auth", {})
@@ -606,7 +614,7 @@ class DataSourceRerankTool(LLMTool):
         tool = cls(
             llm=llm,
             token=token,
-            user_id=auth_dict.get("user_id", ""),
+            user_id=user_id,
             background=config_dict.get("background", ""),
             session=session,
             with_sample=config_dict.get("with_sample", False),
