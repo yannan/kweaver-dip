@@ -107,8 +107,7 @@ func (r *Router) RegisterApi(engine *gin.Engine) {
 
 		// 数据资源授权申请
 		dataAuthRouter := router.Group("/data-auth")
-		dataAuthRouter.POST("/apply", r.DataAuthV2.Apply)    // 申请权限
-		dataAuthRouter.GET("/status", r.DataAuthV2.Status)   // 查询申请状态
+		dataAuthRouter.POST("/apply", r.DataAuthV2.Apply) // 申请权限
 	}
 
 }

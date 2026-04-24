@@ -10,11 +10,21 @@ import (
 	"github.com/google/wire"
 	"github.com/kweaver-ai/idrm-go-common/audit"
 	v1_2 "github.com/kweaver-ai/idrm-go-common/middleware/v1"
-	v1 "github.com/kweaver-ai/idrm-go-common/rest/auth-service/v1"
+	"github.com/kweaver-ai/idrm-go-common/rest/auth-service/v1"
 	impl3 "github.com/kweaver-ai/idrm-go-common/rest/authorization/impl"
+	impl9 "github.com/kweaver-ai/idrm-go-common/rest/automation/impl"
 	impl2 "github.com/kweaver-ai/idrm-go-common/rest/configuration_center/impl"
 	impl4 "github.com/kweaver-ai/idrm-go-common/rest/data_application_service/impl"
+	impl8 "github.com/kweaver-ai/idrm-go-common/rest/data_model/impl"
 	impl5 "github.com/kweaver-ai/idrm-go-common/rest/data_view/impl"
+	"github.com/kweaver-ai/idrm-go-common/rest/hydra/impl"
+	impl6 "github.com/kweaver-ai/idrm-go-common/rest/indicator_management/impl"
+	impl11 "github.com/kweaver-ai/idrm-go-common/rest/studio_web/impl"
+	"github.com/kweaver-ai/idrm-go-common/rest/user_management"
+	"github.com/kweaver-ai/idrm-go-common/trace"
+	"github.com/kweaver-ai/idrm-go-common/workflow"
+	"github.com/kweaver-ai/idrm-go-frame"
+	"github.com/kweaver-ai/idrm-go-frame/core/transport/rest"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driven/database"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driven/gorm"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driven/mq"
@@ -23,20 +33,13 @@ import (
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driven/workflow/custom"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driver"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driver/v2/auth"
+	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driver/v2/data_auth"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/common/settings"
 	impl7 "github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/domain/common_auth/impl"
+	impl10 "github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/domain/data_auth/impl"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/infrastructure/mq/kafka"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/infrastructure/repository/db"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/infrastructure/repository/redis"
-
-	"github.com/kweaver-ai/idrm-go-common/rest/hydra/impl"
-	impl6 "github.com/kweaver-ai/idrm-go-common/rest/indicator_management/impl"
-	impl20 "github.com/kweaver-ai/idrm-go-common/rest/studio_web/impl"
-	"github.com/kweaver-ai/idrm-go-common/rest/user_management"
-	"github.com/kweaver-ai/idrm-go-common/trace"
-	"github.com/kweaver-ai/idrm-go-common/workflow"
-	idrm_go_frame "github.com/kweaver-ai/idrm-go-frame"
-	"github.com/kweaver-ai/idrm-go-frame/core/transport/rest"
 )
 
 // Injectors from wire.go:
@@ -53,12 +56,12 @@ func InitApp(s *settings.Settings) (*AppRunner, func(), error) {
 		return nil, nil, err
 	}
 	middleware := v1_2.NewMiddleware(hydra, drivenUserMgnt, driven, logger, authorizationDriven, authServiceInternalV1Interface)
+	redisClient := redis.NewRedisClient()
 	gormDB, err := db.NewMariaDB(s)
 	if err != nil {
 		return nil, nil, err
 	}
 	indicatorDimensionalRuleInterface := gorm.NewIndicatorDimensionalRuleInterfaceRepository(gormDB)
-	redisClient := redis.NewRedisClient()
 	data_application_serviceDriven := impl4.NewDrivenImpl(client)
 	data_viewDriven := impl5.NewDataViewDriven(client)
 	indicator_managementDriven := impl6.NewDrivenImpl(client)
@@ -68,7 +71,22 @@ func InitApp(s *settings.Settings) (*AppRunner, func(), error) {
 	}
 	databaseClient := database.New(gormDBWithoutDatabase)
 	common_authAuth := impl7.NewAuth(authorizationDriven, redisClient, indicatorDimensionalRuleInterface, driven, data_application_serviceDriven, data_viewDriven, indicator_managementDriven, databaseClient, drivenUserMgnt)
-	authController := auth.NewController(common_authAuth)
+	controller := auth.NewController(common_authAuth)
+	data_modelDriven := impl8.NewDrivenImpl(client)
+	automationDriven := impl9.NewDriven(client)
+	useCase := impl10.NewDataAuth(data_modelDriven, automationDriven)
+	data_authController := data_auth.NewController(useCase)
+	router := &driver.Router{
+		Middleware:       middleware,
+		AuthV2Controller: controller,
+		DataAuthV2:       data_authController,
+	}
+	server := driver.NewHttpServer(s, router)
+	consumer := kafka.NewConsumer()
+	authSubViewRepo := gorm.NewAuthSubViewRepo(gormDB)
+	subViewHandler := views.NewSubViewHandler(authSubViewRepo)
+	kafkaConsumer := mq.NewKafkaConsumer(consumer, subViewHandler)
+	app := newApp(server, kafkaConsumer)
 	mqConf, err := settings.WorkflowMQConfFor(s)
 	if err != nil {
 		return nil, nil, err
@@ -77,22 +95,12 @@ func InitApp(s *settings.Settings) (*AppRunner, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	router := &driver.Router{
-		Middleware:       middleware,
-		AuthV2Controller: authController,
-	}
-	server := driver.NewHttpServer(s, router)
-	consumer := kafka.NewConsumer()
-	authSubViewRepo := gorm.NewAuthSubViewRepo(gormDB)
-	subViewHandler := views.NewSubViewHandler(authSubViewRepo)
-	kafkaConsumer := mq.NewKafkaConsumer(consumer, subViewHandler)
-	app := newApp(server, kafkaConsumer)
 	consumeAuthRequestRepo := gorm.NewConsumeAuthRequestRepo(gormDB, client)
 	wfConsumerRegister, err := custom.NewWFConsumerRegister(workflowInterface, consumeAuthRequestRepo)
 	if err != nil {
 		return nil, nil, err
 	}
-	studio_webDriven := impl20.NewDriven(client)
+	studio_webDriven := impl11.NewDriven(client)
 	registerClient := resources.NewRegisterClient(authorizationDriven, studio_webDriven)
 	appRunner := &AppRunner{
 		App:              app,

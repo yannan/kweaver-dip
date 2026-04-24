@@ -1,7 +1,6 @@
 package data_auth
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -50,38 +49,4 @@ func (s *Controller) Apply(c *gin.Context) {
 	}
 
 	ginx.ResOKJson(c, errorcode.Success)
-}
-
-// Status 查询数据资源权限申请状态
-//
-//	@Description	查询数据资源权限申请状态
-//	@Tags			数据授权
-//	@Summary		查询申请状态
-//	@Accept			json
-//	@Produce		json
-//	@Param			_	query		dto.DataResourceAuthStatusReqArg	true	"请求参数"
-//	@Success		200	{object}	dto.DataViewAuthAuditDetail			"成功响应参数"
-//	@Failure		400	{object}	rest.HttpError						"失败响应参数"
-//	@Router			/api/auth-service/v1/data-auth/status [get]
-func (s *Controller) Status(c *gin.Context) {
-	req := &dto.DataResourceAuthStatusReqArg{}
-	_, err := form_validator.BindQueryAndValid(c, req)
-	if err != nil {
-		c.Writer.WriteHeader(http.StatusBadRequest)
-		if errors.As(err, &form_validator.ValidErrors{}) {
-			ginx.ResErrJson(c, errorcode.Detail(errorcode.PublicInvalidParameter, err))
-			return
-		}
-		ginx.ResErrJson(c, errorcode.Desc(errorcode.PublicRequestParameterError))
-		return
-	}
-
-	res, err := s.authDomain.GetDataResourceAuthStatus(c.Request.Context(), req.ResourceID)
-	if err != nil {
-		c.Writer.WriteHeader(http.StatusBadRequest)
-		ginx.ResErrJson(c, err)
-		return
-	}
-
-	ginx.ResOKJson(c, res)
 }
