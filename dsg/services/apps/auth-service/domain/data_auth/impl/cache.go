@@ -11,7 +11,7 @@ import (
 // getDataAuthInfoFromCache 从缓存中获取数据资源授权申请信息
 func (u *useCase) getDataAuthInfoFromCache(ctx context.Context, dataID string) (*dto.DataViewAuthAuditDetail, error) {
 	//1. 查询数据资源授权申请信息
-	detailString, err := u.redisClient.Get(ctx, dataID)
+	detailString, err := u.redisClient.Get(ctx, genDataAuthRedisKey(dataID))
 	if err != nil {
 		log.WithContext(ctx).Errorf("failed to get data resource auth apply info: %v", err)
 		return nil, err

@@ -59,6 +59,11 @@ type DataViewAuthAuditDetail struct {
 	AuditInfo DataResourceAuditInfo   `json:"audit_info"` //审核信息
 }
 
+// DataResourceAuthStatusReqArg 查询申请状态请求
+type DataResourceAuthStatusReqArg struct {
+	ResourceID string `form:"resource_id" binding:"required,uuid"` //数据资源（视图）ID
+}
+
 func (d *DataViewAuthAuditDetail) GetAuditAbstractName() string {
 	args := []string{
 		applicantType(d.Request.ApplicantType),
