@@ -2,19 +2,8 @@ name: data-semantic-build
 
 on:
   push:
-    branches:
-      - main
-      - master
-      - github-action-build  # TODO: remove after CI migration stabilizes
     tags:
       - "v*"
-    paths:
-      - "gbkn/**"
-      - ".github/workflows/data-semantic-build.yaml"
-  pull_request:
-    branches:
-      - main
-      - master
     paths:
       - "gbkn/**"
       - ".github/workflows/data-semantic-build.yaml"

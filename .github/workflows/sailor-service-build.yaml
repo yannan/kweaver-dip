@@ -2,21 +2,6 @@ name: sailor-service-build
 
 on:
   push:
-    branches:
-      - main
-      - master
-      - github-action-build  # TODO: remove after CI migration stabilizes
-    tags:
-      - "v*"
-    paths:
-      - "chat-data/sailor-service/**"
-      - ".github/workflows/sailor-service-build.yaml"
-      - ".github/workflows/reusable-build-service.yml"
-      - "VERSION"
-  pull_request:
-    branches:
-      - main
-      - master
     paths:
       - "chat-data/sailor-service/**"
       - ".github/workflows/sailor-service-build.yaml"

@@ -2,21 +2,6 @@ name: standardization-backend-build
 
 on:
   push:
-    branches:
-      - main
-      - master
-      - github-action-build  # TODO: remove after CI migration stabilizes
-    tags:
-      - "v*"
-    paths:
-      - "dsg/services/standardization-backend/**"
-      - ".github/workflows/standardization-backend-build.yaml"
-      - ".github/workflows/reusable-build-service.yml"
-      - "VERSION"
-  pull_request:
-    branches:
-      - main
-      - master
     paths:
       - "dsg/services/standardization-backend/**"
       - ".github/workflows/standardization-backend-build.yaml"

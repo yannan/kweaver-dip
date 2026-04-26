@@ -56,6 +56,7 @@ jobs:
     outputs:
       release_tag: ${{ steps.version.outputs.release_tag }}
       release_tag_no_sha: ${{ steps.version.outputs.release_tag_no_sha }}
+      chart_tag: ${{ steps.version.outputs.chart_tag }}
       push_latest: ${{ steps.version.outputs.push_latest }}
     steps:
       - name: Checkout
@@ -105,14 +106,46 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             RELEASE_TAG="${BASE_VERSION}-${SHORT_SHA}"
             RELEASE_TAG_NO_SHA="${BASE_VERSION}"
+            # Tag pushes produce an immutable chart version equal to BASE_VERSION
+            # (e.g. 0.6.0). Production deployments pin to this.
+            CHART_TAG="${BASE_VERSION}"
           else
-            BRANCH_OR_REF="${GITHUB_REF_NAME//\//-}"
+            # Special case: release branches are named release/v<X.Y.Z>.
+            # Collapse the slug to plain "release" so tags read e.g.
+            #   0.6.0-release.20260425050751.e9e972b7
+            # instead of the noisy 0.6.0-release-v0.6.0.<ts>.<sha>.
+            # Warn (do not fail) if the branch-declared version diverges
+            # from the VERSION file, to surface accidental mismatches.
+            if [[ "${GITHUB_REF_NAME}" == release/v* ]]; then
+              BRANCH_OR_REF="release"
+              BRANCH_VER="${GITHUB_REF_NAME#release/v}"
+              if [ "${BRANCH_VER}" != "${BASE_VERSION}" ]; then
+                echo "::warning::release branch ${GITHUB_REF_NAME} declares v${BRANCH_VER} but VERSION resolved to ${BASE_VERSION}"
+              fi
+            else
+              BRANCH_OR_REF="${GITHUB_REF_NAME//\//-}"
+            fi
+            # RELEASE_TAG: immutable per-build tag for images.
             # Format: <baseVer>-<branch>.<UTC-commit-timestamp>.<shortSha>
             # Timestamp as a numeric SemVer pre-release identifier makes tags
-            # sortable by commit time via `sort -V`, so release-manifest
-            # workflows can discover the latest chart on OCI deterministically.
+            # sortable by commit time via `sort -V`.
             RELEASE_TAG="${BASE_VERSION}-${BRANCH_OR_REF}.${COMMIT_TS}.${SHORT_SHA}"
             RELEASE_TAG_NO_SHA="${BASE_VERSION}-${BRANCH_OR_REF}"
+            # CHART_TAG:
+            #   main           -> main-latest  (floating, overwritten every push)
+            #   release/v*     -> RELEASE_TAG  (immutable, new tag every push)
+            #   feature/foo    -> RELEASE_TAG  (immutable, no manifest update)
+            #   tag v0.6.0     -> BASE_VERSION (e.g. 0.6.0, single canonical tag)
+            #
+            # Only main gets a floating chart tag so that main/kweaver-dip.yaml
+            # never needs editing. Release and feature branches use the same
+            # immutable tag as the image; update-manifest writes it to the
+            # release manifest on every push.
+            if [ "${BRANCH_OR_REF}" = "main" ]; then
+              CHART_TAG="main-latest"
+            else
+              CHART_TAG="${RELEASE_TAG}"
+            fi
           fi
 
           if [ "${GITHUB_REF_NAME}" = "main" ] || [ "${WORKFLOW_PUSH_LATEST:-false}" = "true" ]; then
@@ -122,6 +155,7 @@ jobs:
           {
             echo "release_tag=${RELEASE_TAG}"
             echo "release_tag_no_sha=${RELEASE_TAG_NO_SHA}"
+            echo "chart_tag=${CHART_TAG}"
             echo "push_latest=${SHOULD_PUSH_LATEST}"
           } >> "${GITHUB_OUTPUT}"
 
@@ -150,6 +184,8 @@ jobs:
         run: |
           platform="${{ matrix.platform }}"
           echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
+          # e.g. linux/amd64 -> amd64 ; used as an explicit tag suffix.
+          echo "arch=${platform##*/}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -169,68 +205,33 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.image_name }}
+          # Explicit per-arch tag so each architecture shows up as a distinct
+          # entry in the registry UI (alongside the multi-arch manifest list
+          # produced by docker-merge under the un-suffixed tag).
+          tags: |
+            type=raw,value=${{ needs.release-version.outputs.release_tag }}.${{ steps.platform.outputs.arch }}
 
-      - name: Build and push by digest (GHCR)
+      - name: Build and push (GHCR, per-arch tag)
         id: build
         uses: docker/build-push-action@v6
         with:
           context: ${{ inputs.build_context }}
           file: ${{ inputs.dockerfile }}
           platforms: ${{ matrix.platform }}
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: false
           sbom: false
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.image_name }},push-by-digest=true,name-canonical=true,push=true
+          push: true
           build-args: |
             SERVER_VERSION=${{ needs.release-version.outputs.release_tag_no_sha }}
             GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha,scope=${{ inputs.service_name }}-${{ steps.platform.outputs.pair }}
           cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}-${{ steps.platform.outputs.pair }}
 
-      - name: Export digest
-        run: |
-          mkdir -p "${RUNNER_TEMP}/digests"
-          digest="${{ steps.build.outputs.digest }}"
-          touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
-
-      - name: Upload digest
-        uses: actions/upload-artifact@v4
-        with:
-          name: digests-${{ inputs.service_name }}-${{ steps.platform.outputs.pair }}
-          path: ${{ runner.temp }}/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  # PR: only verify that amd64 builds, don't push.
-  docker-pr-verify:
-    needs:
-      - release-version
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set Up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build amd64 (verify only, no push)
-        uses: docker/build-push-action@v6
-        with:
-          context: ${{ inputs.build_context }}
-          file: ${{ inputs.dockerfile }}
-          platforms: linux/amd64
-          push: false
-          provenance: false
-          sbom: false
-          build-args: |
-            SERVER_VERSION=${{ needs.release-version.outputs.release_tag_no_sha }}
-            GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
-          cache-from: type=gha,scope=${{ inputs.service_name }}-linux-amd64
-
-  # Merge per-arch digests into a single multi-arch manifest with proper tags.
+  # Build a multi-arch manifest list from the per-arch tags pushed by docker-build.
+  # Sources are <image>:<RELEASE_TAG>.amd64 and <image>:<RELEASE_TAG>.arm64.
+  # Targets are the un-suffixed tags <RELEASE_TAG>, <RELEASE_TAG_NO_SHA>, latest.
   docker-merge:
     needs:
       - release-version
@@ -241,13 +242,6 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: Download digests
-        uses: actions/download-artifact@v4
-        with:
-          path: ${{ runner.temp }}/digests
-          pattern: digests-${{ inputs.service_name }}-*
-          merge-multiple: true
-
       - name: Set Up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -258,23 +252,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker Metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.image_name }}
-          tags: |
-            type=raw,value=${{ needs.release-version.outputs.release_tag }}
-            type=raw,value=${{ needs.release-version.outputs.release_tag_no_sha }}
-            type=raw,value=latest,enable=${{ needs.release-version.outputs.push_latest == 'true' }}
-
-      - name: Create manifest list and push
-        working-directory: ${{ runner.temp }}/digests
+      - name: Create multi-arch manifest list (GHCR)
+        env:
+          IMG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.image_name }}
+          RELEASE_TAG: ${{ needs.release-version.outputs.release_tag }}
         run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.image_name }}@sha256:%s ' *)
+          set -euo pipefail
+          docker buildx imagetools create -t "${IMG}:${RELEASE_TAG}" \
+            "${IMG}:${RELEASE_TAG}.amd64" \
+            "${IMG}:${RELEASE_TAG}.arm64"
 
-      - name: Inspect image
+      - name: Inspect manifest list
         run: |
           docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.image_name }}:${{ needs.release-version.outputs.release_tag }}
 
@@ -296,8 +284,11 @@ jobs:
         with:
           version: v3.16.2
 
-      - name: Align chart version, appVersion and image fields
+      - name: Align chart appVersion and image fields
         env:
+          # appVersion and values.image.tag both carry the immutable per-build
+          # image tag so `helm pull <any chart tag>` always resolves to a
+          # specific, traceable image build.
           RELEASE_TAG: ${{ needs.release-version.outputs.release_tag }}
           CHART_DIR: ${{ inputs.chart_dir }}
           IMAGE_REPOSITORY_OVERRIDE: ${{ inputs.image_repository }}
@@ -307,22 +298,21 @@ jobs:
           import os, re
           from pathlib import Path
 
-          tag = os.environ["RELEASE_TAG"]
-          chart_dir = Path(os.environ["CHART_DIR"])
-          override = os.environ.get("IMAGE_REPOSITORY_OVERRIDE", "").strip()
-          repo = override or f"kweaver-ai/{os.environ['IMAGE_NAME']}"
+          release_tag = os.environ["RELEASE_TAG"]
+          chart_dir   = Path(os.environ["CHART_DIR"])
+          override    = os.environ.get("IMAGE_REPOSITORY_OVERRIDE", "").strip()
+          repo        = override or f"kweaver-ai/{os.environ['IMAGE_NAME']}"
 
           chart = chart_dir / "Chart.yaml"
           text = chart.read_text(encoding="utf-8")
-          text = re.sub(r"(?m)^version:.*$",    f'version: "{tag}"',    text)
-          text = re.sub(r"(?m)^appVersion:.*$", f'appVersion: "{tag}"', text)
+          text = re.sub(r"(?m)^appVersion:.*$", f'appVersion: "{release_tag}"', text)
           chart.write_text(text, encoding="utf-8")
 
           values = chart_dir / "values.yaml"
           vt = values.read_text(encoding="utf-8")
-          vt = re.sub(r"(?m)^(\s*registry:\s*).*$",   r'\1ghcr.io',     vt, count=1)
-          vt = re.sub(r"(?m)^(\s*repository:\s*).*$", rf'\1{repo}',     vt, count=1)
-          vt = re.sub(r"(?m)^(\s*tag:\s*).*$",        rf'\1"{tag}"',    vt, count=1)
+          vt = re.sub(r"(?m)^(\s*registry:\s*).*$",   r'\1ghcr.io',           vt, count=1)
+          vt = re.sub(r"(?m)^(\s*repository:\s*).*$", rf'\1{repo}',           vt, count=1)
+          vt = re.sub(r"(?m)^(\s*tag:\s*).*$",        rf'\1"{release_tag}"',  vt, count=1)
           values.write_text(vt, encoding="utf-8")
           PY
 
@@ -337,25 +327,51 @@ jobs:
           CHART_NAME: ${{ inputs.chart_name != '' && inputs.chart_name || inputs.service_name }}
         run: helm template "${CHART_NAME}" "${CHART_DIR}" > /dev/null || echo "::warning::helm template render failed with default values (non-blocking; real deployments inject values)"
 
-      - name: Package Helm Chart
-        env:
-          CHART_DIR: ${{ inputs.chart_dir }}
-        run: |
-          mkdir -p dist-chart
-          helm package "${CHART_DIR}" --destination dist-chart
-
       - name: Log In To GHCR (Helm OCI)
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" \
             | helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
 
-      - name: Push Chart to GHCR (OCI)
+      - name: Package and Push Chart (immutable + floating)
+        env:
+          CHART_DIR: ${{ inputs.chart_dir }}
+          RELEASE_TAG: ${{ needs.release-version.outputs.release_tag }}
+          CHART_TAG: ${{ needs.release-version.outputs.chart_tag }}
+          OCI_REPO: oci://${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/charts
         run: |
           set -euo pipefail
-          for tgz in dist-chart/*.tgz; do
-            echo "Pushing ${tgz} to oci://${REGISTRY}/${IMAGE_NAMESPACE}/charts"
-            helm push "${tgz}" "oci://${REGISTRY}/${IMAGE_NAMESPACE}/charts"
-          done
+          mkdir -p dist-chart
+
+          # Helper: package the chart with a specific Chart.yaml::version,
+          # then push the resulting tgz to OCI.
+          package_and_push() {
+            local version="$1"
+            python3 - <<PY
+          import os, re
+          from pathlib import Path
+          chart = Path(os.environ["CHART_DIR"]) / "Chart.yaml"
+          t = chart.read_text(encoding="utf-8")
+          t = re.sub(r'(?m)^version:.*$', f'version: "${version}"', t)
+          chart.write_text(t, encoding="utf-8")
+          PY
+            helm package "${CHART_DIR}" --destination dist-chart
+            local tgz
+            tgz="$(ls -1t dist-chart/*-${version}.tgz | head -n1)"
+            echo "Pushing ${tgz} to ${OCI_REPO}"
+            helm push "${tgz}" "${OCI_REPO}"
+          }
+
+          # 1) Immutable per-build tag (e.g. 0.6.0-main.20260425050751.e9e972b7)
+          package_and_push "${RELEASE_TAG}"
+
+          # 2) Floating per-branch tag (e.g. main-latest, 0.6.0-release-latest).
+          # Skipped when RELEASE_TAG == CHART_TAG (tag pushes use a single
+          # immutable tag like 0.6.0).
+          if [ "${CHART_TAG}" != "${RELEASE_TAG}" ]; then
+            package_and_push "${CHART_TAG}"
+          else
+            echo "CHART_TAG == RELEASE_TAG (${CHART_TAG}); skipping floating push."
+          fi
 
       - name: Upload Chart Package (artifact)
         uses: actions/upload-artifact@v4
@@ -396,36 +412,55 @@ jobs:
           username: ${{ secrets.HUAWEI_SWR_USERNAME }}
           password: ${{ secrets.HUAWEI_SWR_PASSWORD }}
 
-      - name: Mirror image GHCR -> SWR (multi-arch)
+      - name: Mirror per-arch images GHCR -> SWR
         env:
           SRC: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ inputs.image_name }}
           DST: ${{ env.SWR_REGISTRY }}/${{ env.SWR_NAMESPACE }}/${{ inputs.image_name }}
           RELEASE_TAG: ${{ needs.release-version.outputs.release_tag }}
-          RELEASE_TAG_NO_SHA: ${{ needs.release-version.outputs.release_tag_no_sha }}
-          PUSH_LATEST: ${{ needs.release-version.outputs.push_latest }}
         run: |
           set -euo pipefail
-          # Build the list of -t target tags to apply on SWR side.
-          TARGETS=( "-t" "${DST}:${RELEASE_TAG}" "-t" "${DST}:${RELEASE_TAG_NO_SHA}" )
-          if [ "${PUSH_LATEST}" = "true" ]; then
-            TARGETS+=( "-t" "${DST}:latest" )
-          fi
-          echo "Mirroring ${SRC}:${RELEASE_TAG} -> ${DST} (${#TARGETS[@]} tag refs)"
-          docker buildx imagetools create "${TARGETS[@]}" "${SRC}:${RELEASE_TAG}"
+          for arch in amd64 arm64; do
+            echo "Mirroring ${SRC}:${RELEASE_TAG}.${arch} -> ${DST}:${RELEASE_TAG}.${arch}"
+            docker buildx imagetools create -t "${DST}:${RELEASE_TAG}.${arch}" "${SRC}:${RELEASE_TAG}.${arch}"
+          done
 
-      - name: Inspect SWR image
+      - name: Create multi-arch manifest list (SWR)
+        env:
+          DST: ${{ env.SWR_REGISTRY }}/${{ env.SWR_NAMESPACE }}/${{ inputs.image_name }}
+          RELEASE_TAG: ${{ needs.release-version.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create -t "${DST}:${RELEASE_TAG}" \
+            "${DST}:${RELEASE_TAG}.amd64" \
+            "${DST}:${RELEASE_TAG}.arm64"
+
+      - name: Inspect SWR manifest list
         run: |
           docker buildx imagetools inspect \
             ${{ env.SWR_REGISTRY }}/${{ env.SWR_NAMESPACE }}/${{ inputs.image_name }}:${{ needs.release-version.outputs.release_tag }}
 
-  # Auto-bump chart version in deploy/release-manifests/main/kweaver-dip.yaml
-  # for rolling "main" channel. Only runs on direct push to main
-  # (i.e. after a PR is merged). Feature / test branches must edit manifests
-  # manually; they never mutate the main-channel manifest.
-  update-main-manifest:
+  # Manifest update / verification.
+  #
+  #   main:        verify-only mode. CI compares the manifest entry against
+  #                the expected chart_tag and FAILS on mismatch. It never
+  #                writes; the manifest is human-maintained for main.
+  #                Because main uses CHART_TAG="main-latest" (no version
+  #                prefix), bumping VERSION never causes a mismatch.
+  #
+  #   release/v*: write mode. CI runs `yq` to set the release entry to the
+  #                expected immutable chart tag (same as RELEASE_TAG, e.g.
+  #                0.6.0-release.20260425050751.e9e972b7). On regular pushes
+  #                this may advance to a new immutable value for the touched
+  #                service. It auto-corrects manual drift and commits with
+  #                [skip ci].
+  #
+  # Other refs (feature branches, master, tags) skip this job entirely.
+  update-manifest:
     if: >-
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main'
+      github.event_name == 'push' && (
+        github.ref == 'refs/heads/main' ||
+        startsWith(github.ref, 'refs/heads/release/v')
+      )
     needs:
       - release-version
       - helm-chart
@@ -435,12 +470,11 @@ jobs:
     concurrency:
       # Serialize manifest updates across parallel service builds on the same branch
       # so concurrent yq edits don't clobber each other.
-      group: update-main-manifest-${{ github.ref_name }}
+      group: update-manifest-${{ github.ref_name }}
       cancel-in-progress: false
     env:
-      MANIFEST_PATH: deploy/release-manifests/main/kweaver-dip.yaml
       RELEASE_KEY: ${{ inputs.chart_name != '' && inputs.chart_name || inputs.service_name }}
-      NEW_VERSION: ${{ needs.release-version.outputs.release_tag }}
+      EXPECTED_VERSION: ${{ needs.release-version.outputs.chart_tag }}
     steps:
       - name: Checkout (with full history on target ref)
         uses: actions/checkout@v4
@@ -456,57 +490,87 @@ jobs:
             https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
 
-      - name: Check manifest entry exists
+      - name: Resolve manifest path for this ref
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            MODE="verify"
+            MANIFEST_PATH="deploy/release-manifests/main/kweaver-dip.yaml"
+          elif [[ "${GITHUB_REF_NAME}" == release/v* ]]; then
+            MODE="write"
+            BRANCH_VER="${GITHUB_REF_NAME#release/v}"
+            MANIFEST_PATH="deploy/release-manifests/${BRANCH_VER}/kweaver-dip.yaml"
+          else
+            echo "::error::update-manifest job triggered on unexpected ref ${GITHUB_REF}"
+            exit 1
+          fi
+          echo "MODE=${MODE}"               >> "${GITHUB_ENV}"
+          echo "MANIFEST_PATH=${MANIFEST_PATH}" >> "${GITHUB_ENV}"
+          echo "Mode: ${MODE}, manifest: ${MANIFEST_PATH}"
+
+      - name: Validate manifest file and key exist
         run: |
           set -euo pipefail
           if [ ! -f "${MANIFEST_PATH}" ]; then
-            echo "::warning::${MANIFEST_PATH} does not exist; skipping auto-update."
-            exit 0
+            echo "::error::${MANIFEST_PATH} does not exist."
+            if [ "${MODE}" = "write" ]; then
+              echo "::error::Run 'cp -r deploy/release-manifests/main deploy/release-manifests/${MANIFEST_PATH##*/release-manifests/}' (then adjust cross-product deps) before pushing release branch."
+            fi
+            exit 1
           fi
           if ! yq -e ".releases.\"${RELEASE_KEY}\"" "${MANIFEST_PATH}" >/dev/null 2>&1; then
-            echo "::warning::release key '${RELEASE_KEY}' not found in ${MANIFEST_PATH}; skipping auto-update."
-            echo "SKIP=true" >> "${GITHUB_ENV}"
+            echo "::error::release key '${RELEASE_KEY}' not found in ${MANIFEST_PATH}."
+            echo "::error::Add an entry under 'releases:' before merging this service."
+            exit 1
           fi
 
-      - name: Update chart version in manifest
-        if: env.SKIP != 'true'
+      - name: Verify (main) — fail on drift, never write
+        if: env.MODE == 'verify'
         run: |
           set -euo pipefail
           CURRENT="$(yq -r ".releases.\"${RELEASE_KEY}\".version // \"\"" "${MANIFEST_PATH}")"
-          if [ "${CURRENT}" = "${NEW_VERSION}" ]; then
-            echo "Manifest already pinned to ${NEW_VERSION}; nothing to do."
-            echo "SKIP=true" >> "${GITHUB_ENV}"
+          if [ "${CURRENT}" = "${EXPECTED_VERSION}" ]; then
+            echo "OK: ${MANIFEST_PATH} releases.${RELEASE_KEY}.version = ${EXPECTED_VERSION}"
             exit 0
           fi
-          RELEASE_KEY="${RELEASE_KEY}" NEW_VERSION="${NEW_VERSION}" \
-            yq -i '.releases[strenv(RELEASE_KEY)].version = strenv(NEW_VERSION)' "${MANIFEST_PATH}"
-          echo "Updated ${RELEASE_KEY}: ${CURRENT} -> ${NEW_VERSION}"
+          echo "::error file=${MANIFEST_PATH}::releases.${RELEASE_KEY}.version is '${CURRENT}', expected '${EXPECTED_VERSION}'"
+          echo "::error::Fix locally then push:"
+          echo "::error::  RELEASE_KEY=${RELEASE_KEY} NEW=${EXPECTED_VERSION} yq -i '.releases[strenv(RELEASE_KEY)].version = strenv(NEW)' ${MANIFEST_PATH}"
+          exit 1
 
-      - name: Commit and push
-        if: env.SKIP != 'true'
+      - name: Write (release/v*) — auto-correct drift and commit
+        if: env.MODE == 'write'
         run: |
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Retry loop to handle race with other concurrent service updates
-          # (concurrency group should already serialize us, but be defensive).
-          for attempt in 1 2 3; do
+          RELEASE_KEY="${RELEASE_KEY}" NEW_VERSION="${EXPECTED_VERSION}" \
+            yq -i '.releases[strenv(RELEASE_KEY)].version = strenv(NEW_VERSION)' "${MANIFEST_PATH}"
+
+          if git diff --quiet -- "${MANIFEST_PATH}"; then
+            echo "Manifest already pinned to ${EXPECTED_VERSION}; no commit."
+            exit 0
+          fi
+
+          # Retry loop: concurrency group serializes us, but be defensive
+          # against human pushes racing with the bot.
+          for attempt in 1 2 3 4 5; do
             git add "${MANIFEST_PATH}"
             if git diff --cached --quiet; then
-              echo "No changes to commit."
+              echo "No staged changes after attempt ${attempt}."
               exit 0
             fi
-            git commit -m "chore(manifest): bump ${RELEASE_KEY} to ${NEW_VERSION} [skip ci]"
+            git commit -m "chore(manifest): bump ${RELEASE_KEY} to ${EXPECTED_VERSION} [skip ci]"
             if git push origin HEAD:"${GITHUB_REF_NAME}"; then
-              echo "Pushed manifest update."
+              echo "Pushed manifest update on attempt ${attempt}."
               exit 0
             fi
             echo "Push rejected (attempt ${attempt}); pulling --rebase and retrying."
             git pull --rebase origin "${GITHUB_REF_NAME}"
-            # Re-apply the yq edit on top of the rebased tree (previous commit may be gone after rebase).
-            RELEASE_KEY="${RELEASE_KEY}" NEW_VERSION="${NEW_VERSION}" \
+            RELEASE_KEY="${RELEASE_KEY}" NEW_VERSION="${EXPECTED_VERSION}" \
               yq -i '.releases[strenv(RELEASE_KEY)].version = strenv(NEW_VERSION)' "${MANIFEST_PATH}"
           done
-          echo "::error::Failed to push manifest update after 3 attempts."
+          echo "::error::Failed to push manifest update after 5 attempts."
+          echo "::error::Run locally:  yq -i '.releases.\"${RELEASE_KEY}\".version = \"${EXPECTED_VERSION}\"' ${MANIFEST_PATH} && git commit && git push"
           exit 1

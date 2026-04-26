@@ -2,21 +2,6 @@ name: task-center-build
 
 on:
   push:
-    branches:
-      - main
-      - master
-      - github-action-build  # TODO: remove after CI migration stabilizes
-    tags:
-      - "v*"
-    paths:
-      - "dsg/services/apps/task_center/**"
-      - ".github/workflows/task-center-build.yaml"
-      - ".github/workflows/reusable-build-service.yml"
-      - "VERSION"
-  pull_request:
-    branches:
-      - main
-      - master
     paths:
       - "dsg/services/apps/task_center/**"
       - ".github/workflows/task-center-build.yaml"
