@@ -21,11 +21,7 @@
     "smart_data_insights": {
       "type": "subskill",
       "reference": "skills/smart-data-analysis/references/smart-data-insights.md"
-    },
-    "smart_data_interpretation": {
-      "type": "subskill",
-      "reference": "skills/smart-data-analysis/references/smart-data-interpretation.md"
-    },
+    },    
     "smart_reporting": {
       "type": "subskill",
       "reference": "skills/smart-data-analysis/references/smart-reporting.md"
@@ -87,13 +83,6 @@
       "flow": "smart-data-insights",
       "trigger": "intent=data_insights",
       "reference": "skills/smart-data-analysis/references/smart-data-insights.md"
-    },
-    {
-      "step": 5,
-      "role": "interpret_data",
-      "flow": "smart-data-interpretation",
-      "trigger": "intent=data_interpretation",
-      "reference": "skills/smart-data-analysis/references/smart-data-interpretation.md"
     },
     {
       "step": 5,

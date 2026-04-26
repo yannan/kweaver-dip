@@ -154,7 +154,7 @@
 
 ## Mermaid 图表（可选，仅基于输入）
 
-本 skill **不调用** `json2plot` 等出图工具；若需可视化，使用 Markdown 代码块 **` ```mermaid `** … **` ``` `** 嵌入 Mermaid 源码，且**全部数据点**来自 `smart-search-tables` / `smart-ask-data` / `smart-data-insights`（场景 `attribution_analysis_report` 的输入证据）的输入原文可复核。
+本 skill **不调用** `json2plot` 等出图工具；若需可视化，使用 Markdown 代码块 **` ```mermaid `** … **` ``` `** 嵌入 Mermaid 源码，且**全部数据点**来自 `smart-search-tables` / `smart-ask-data` / `smart-data-insights`（含子场景 `attribution_analysis_report` 的输入证据）的输入原文可复核。
 
 ### 何时加入图表（位置硬约束）
 
