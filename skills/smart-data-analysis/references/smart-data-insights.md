@@ -5,8 +5,8 @@ user-invocable: true
 description: >-
   数据洞察 skill 四个子场景：数据解读、维度分析、对比分析、归因分析。当用户要求「解读数据/趋势/异常/贡献/建议」或「多角度/多维度/分布」或「对比/比较/同比/环比/A与B」或「归因/根因/为什么/驱动因素/MECE 证据链」等时使用。
   面向有分析需求的业务用户：用户可见正文以通俗业务语言为主（结论先说清「说明了什么、对谁有用」），技术核对（表名、子问题编号、原样 SQL 等）集中在「附录 / 核对用」或章节后部，避免主文堆砌术语。
-  统一执行路径：先做子场景识别，再按新版 smart-ask-data 第 7～9 步（候选表检索 → 权限校验 → dataview get）收敛可查询的数据视图与字段；在拆分子问题之前还须阅读本轮每一启用子场景在 references/ 下的输出模板（data_interpretation.md、dimensional_analysis.md、contrastive_analysis.md、attribution_analysis.md 四选一或多选，仅读启用项）；
-  然后编写子问题清单并逐子问题按新版 smart-ask-data 第 10～11 步（生成 SQL → dataview query 执行）取数；
+  统一执行路径：先做子场景识别，再按 smart-ask-data 第 7～9 步（候选表检索 → 权限校验 → dataview get）收敛可查询的数据视图与字段；在拆分子问题之前还须阅读本轮每一启用子场景在 references/ 下的输出模板（data_interpretation.md、dimensional_analysis.md、contrastive_analysis.md、attribution_analysis.md 四选一或多选，仅读启用项）；
+  然后编写子问题清单并逐子问题按 smart-ask-data 第 10～11 步（生成 SQL → dataview query 执行）取数；
   仅基于各子问题「原样 SQL + 原样结果 + 最小口径」按已读模板合成正文（禁止无证据推断）。
   若用户已提供完整多子问题取数交付物且明确「仅洞察/仅解读、不取数」，可走「仅消费输入」降级路径（见正文）。
 metadata:
@@ -18,7 +18,7 @@ argument-hint:
 
 # Smart Data Insights（数据洞察：四子场景）
 
-本 skill 的定位：**在可复核的数据证据上**，按所选子场景输出结构化结论。四个子场景 **共享同一套上游编排**（**先做子场景识别** → 新版 smart-ask-data 第 7～9 步：候选表检索 → 权限校验 → `dataview get` **收敛可查询的数据视图与字段** → **子场景模板查阅** → 子问题清单 → 每子问题第 10～11 步：生成 SQL/执行查询），差异在于 **子问题设计侧重点** 与 **输出章节模板**（分文件维护于 `references/`，**须在拆子问题前阅读对应模板**）。
+本 skill 的定位：**在可复核的数据证据上**，按所选子场景输出结构化结论。四个子场景 **共享同一套上游编排**（**先做子场景识别** →  smart-ask-data 第 7～9 步：候选表检索 → 权限校验 → `dataview get` **收敛可查询的数据视图与字段** → **子场景模板查阅** → 子问题清单 → 每子问题执行 smart-ask-data 第 10～11 步：生成 SQL/执行查询），差异在于 **子问题设计侧重点** 与 **输出章节模板**（分文件维护于 `references/`，**须在拆子问题前阅读对应模板**）。
 
 **默认读者**：以 **业务用户**（关心指标含义、变化对业务的影响、可行动结论）为主；**编排与取数**仍须严格遵守 `smart-ask-data` 与各 reference 的证据约束，但 **用户可见主文** 应少写实现细节（如接口名、字段英文名、命令细节等），把「谁、在什么范围、看出什么、建议关注什么」写在前。
 
@@ -34,7 +34,7 @@ argument-hint:
 **模板与渐进加载（MUST）**
 
 - **读取范围**：只读 **本轮已启用** 的子场景文件；启用几类读几份，**禁止**未启用子场景也整本预读。
-- **读取时机（与「子场景识别 / 找表 / 字段」的关系）**：在 **「子问题拆解」步骤开始之前**，须已完成：**①** **子场景识别**（确定本轮启用哪些子场景）；**②** 至少一次与用户问题相关的新版 smart-ask-data **第 7～9 步**（`kn-schema-search` 候选表检索 → 第 8 步权限校验 → 对通过候选执行 `dataview get` **收敛可查询的 `dataview_id` 与 `fields`**）；**③** 对 **每一个已启用子场景**，打开对应 `references/*.md`（含 `attribution_analysis.md`），至少阅读 **「子问题拆解指引 / 规则」** 与 **「输出模板」** 两节（标题以各文件内 `##` 为准）。**禁止**在未读模板的情况下编写子问题清单。
+- **读取时机（与「子场景识别 / 找表 / 字段」的关系）**：在 **「子问题拆解」步骤开始之前**，须已完成：**①** **子场景识别**（确定本轮启用哪些子场景）；**②** 至少一次与用户问题相关的 smart-ask-data **第 7～9 步**（`kn-schema-search` 候选表检索 → 第 8 步权限校验 → 对通过候选执行 `dataview get` **收敛可查询的 `dataview_id` 与 `fields`**）；**③** 对 **每一个已启用子场景**，打开对应 `references/*.md`（含 `attribution_analysis.md`），至少阅读 **「子问题拆解指引 / 规则」** 与 **「输出模板」** 两节（标题以各文件内 `##` 为准）。**禁止**在未读模板的情况下编写子问题清单。
 - **合成阶段**：最终输出仍须与已读模板章节一致；若写正文时需核对措辞，可再次打开同一文件，**不必**为未启用子场景补读全文。
 
 ---
@@ -51,9 +51,9 @@ argument-hint:
 
 ## 能力边界（MUST）
 
-- **必须经真实取数（默认路径）**：洞察中的每一个数字、表格、排名、差值 / 增幅，须能回指到某次新版 smart-ask-data 第 11 步 `kweaver dataview query` 的**原样结果集**（经 `smart-ask-data`）；**禁止**在无对应结果时编造、外推或用常识补齐。
-- **拆子问题前的三前置（MUST）**：默认路径下，在编写「子问题清单」之前，必须 **(A)** 完成 **子场景识别**（本轮启用项已确定）；**(B)** 至少完成 **一次** 与用户问题相关的新版 smart-ask-data **第 7～9 步**（候选表检索 → 权限校验 → `dataview get` **收敛可查询数据视图与字段**）；**(C)** 已按 **已启用子场景** 阅读 `references/data_interpretation.md`、`references/dimensional_analysis.md`、`references/contrastive_analysis.md`、`references/attribution_analysis.md` 中各自的 **子问题指引 + 输出模板**（仅读启用项，路径见上文「四子场景一览」）。
-- **禁止替代问数实现细节**：命令、接口与失败处理等 **一律遵循** [smart-ask-data/SKILL.md](../smart-ask-data/SKILL.md) 与其对应 `smart-ask-data.md`（含第 7～11 步约束）；尤其第 11 步仅允许使用 `kweaver dataview query ...` 执行查询，失败即停。
+- **必须经真实取数（默认路径）**：洞察中的每一个数字、表格、排名、差值 / 增幅，须能回指到某次 smart-ask-data 第 11 步 `kweaver dataview query` 的**原样结果集**（经 `smart-ask-data`）；**禁止**在无对应结果时编造、外推或用常识补齐。
+- **拆子问题前的三前置（MUST）**：默认路径下，在编写「子问题清单」之前，必须 **(A)** 完成 **子场景识别**（本轮启用项已确定）；**(B)** 至少完成 **一次** 与用户问题相关的 smart-ask-data **第 7～9 步**（候选表检索 → 权限校验 → `dataview get` **收敛可查询数据视图与字段**）；**(C)** 已按 **已启用子场景** 阅读 `references/data_interpretation.md`、`references/dimensional_analysis.md`、`references/contrastive_analysis.md`、`references/attribution_analysis.md` 中各自的 **子问题指引 + 输出模板**（仅读启用项，路径见上文「四子场景一览」）。
+- **禁止替代问数实现细节**：命令、接口与失败处理等 **一律遵循**  `smart-ask-data.md`（含第 7～11 步约束）；尤其第 11 步仅允许使用 `kweaver dataview query ...` 执行查询，失败即停。
 - **`execute_code_sync` （默认禁止，例外）**：除 **归因分析子场景（`attribution_analysis`）** 外，本 skill **禁止**使用 `execute_code_sync`。若本轮已启用 `attribution_analysis`，允许 **仅按** [`references/attribution_analysis.md`](references/attribution_analysis.md) 的边界使用二者，且输入必须可回指至已取得的 `dataview query` 结果。
 - **子问题数量**：须在 **同一 assistant 回复** 内完成的子问题，建议 **2～8 条**（含）；**若启用 `attribution_analysis`**，子问题数量 **可按该文件建议（如 3～12 条）** 执行，但仍须有停止规则与失败门禁。
 - **降级路径（仅消费输入）**：仅当用户 **显式提供** 多段「`smart-ask-data` 最终交付原文」（每段含 **kn_id、原样 SQL、原样结果、最小口径**），且声明 **不再发起新的第 7～11 步取数** 时，可跳过取数编排，直接按 **已启用子场景** 的 reference 模板合成；仍 **禁止**使用输入中不存在的数值。
@@ -66,12 +66,12 @@ argument-hint:
 数据洞察进度：
 - [ ] 0. 前置：已由 smart-data-analysis 确认本任务为「数据洞察（四子场景之一或多个子场景）」且 kn_id_ask_data / 运行上下文可用（见 smart-ask-data Step 1）
 - [ ] 1. 子场景识别（必须先做）：从四子场景中择一或多；多子场景时见下文「多子场景输出顺序」
-- [ ] 2. 候选表检索（第 7 步）：使用 `kweaver context-loader kn-schema-search "用户问题关键词"` 检索候选表/视图，并按要求输出「候选表列表」（含对象类型/业务名称、dataview_id）。若报 `view_detail` 权限不足或 `DefaultSmallModelEnabled is false` → 失败即停
-- [ ] 3. 查询权限校验（第 8 步）：对候选表列表逐一校验 `operations` 是否包含 `data_query`；若全部不含 → 失败即停
-- [ ] 4. 获取候选表详情（第 9 步）：对通过权限校验的 `dataview_id` 执行 `kweaver dataview get <dataview_id>`，拿到 `meta_table_name` 与 `fields`，**收敛**本轮将用于 `dataview query` 的可查询视图与字段，作为后续 SQL 生成依据
+- [ ] 2. 候选表检索（smart-ask-data的第 7 步）：使用 `kweaver context-loader kn-schema-search "用户问题关键词"` 检索候选表/视图，并按要求输出「候选表列表」（含对象类型/业务名称、dataview_id）。若报 `view_detail` 权限不足或 `DefaultSmallModelEnabled is false` → 失败即停
+- [ ] 3. 查询权限校验（smart-ask-data的第 8 步）：对候选表列表逐一校验 `operations` 是否包含 `data_query`；若全部不含 → 失败即停
+- [ ] 4. 获取候选表详情（smart-ask-data的第 9 步）：对通过权限校验的 `dataview_id` 执行 `kweaver dataview get <dataview_id>`，拿到 `meta_table_name` 与 `fields`，**收敛**本轮将用于 `dataview query` 的可查询视图与字段，作为后续 SQL 生成依据
 - [ ] 5. 查阅子场景输出模板（须在子问题拆解前完成）：对步骤 1 **每一个已启用**子场景，阅读对应 `references/data_interpretation.md` / `references/dimensional_analysis.md` / `references/contrastive_analysis.md` / `references/attribution_analysis.md` 中的 **子问题拆解指引** 与 **输出模板** 章节；仅读启用项
 - [ ] 6. 子问题拆解：写出「子问题清单」（每条可独立生成 SQL 并执行查询回答，且口径互不矛盾）；须能覆盖步骤 5 已读模板中的必选小节，并与步骤 4 的字段信息可落地
-- [ ] 7. 逐子问题取数（第 10～11 步）：每个子问题在已获取的候选表详情基础上生成可执行 SQL（含日期合法性校核、**行数策略**等约束），并仅使用 `kweaver dataview query <dataview_id> --sql <sql_var> --limit <n>` 执行查询返回结果（失败即停）。其中 **行数策略**必须遵循 `smart-ask-data.md` 的“两段式约定”：**原始明细默认限行**（SQL `LIMIT 200` + `--limit 200`）；**聚合加工后的小结果不应被 `LIMIT 200` 截断**（可不加 SQL limit，并将 `--limit` 提升到如 `2000` 的安全值）。
+- [ ] 7. 逐子问题取数（smart-ask-data的第 10～11 步）：每个子问题在已获取的候选表详情基础上生成可执行 SQL（含日期合法性校核、**行数策略**等约束），并仅使用 `kweaver dataview query <dataview_id> --sql <sql_var> --limit <n>` 执行查询返回结果（失败即停）。其中 **行数策略**必须遵循 `smart-ask-data.md` 的“两段式约定”：**原始明细默认限行**（SQL `LIMIT 200` + `--limit 200`）；**聚合加工后的小结果不应被 `LIMIT 200` 截断**（可不加 SQL limit，并将 `--limit` 提升到如 `2000` 的安全值）。
 - [ ] 8. 证据校核：任一子问题失败、空结果重试耗尽或缺关键字段 → 按「失败门禁」处理，禁止用其它子问题结果凑数
 - [ ] 9. 洞察合成：仅基于各子问题交付物，**严格按步骤 5 已读模板** 输出；多段 SQL / 多结果须在「口径与证据来源」中分列
 ```
@@ -118,7 +118,7 @@ argument-hint:
 ### 模式 A — 执行型（默认）
 
 - **输入**：用户自然语言问题；**`kn_id_ask_data`** 须从仓库根目录 **`SOUL.md`** 读取（与 [smart-data-analysis](../smart-data-analysis/SKILL.md) 一致，**禁止**未声明 KN）。
-- **本 skill 负责**：按「编排总流程」驱动新版 smart-ask-data 第 7～11 步及多次子问题查询，再按启用子场景输出。
+- **本 skill 负责**：按「编排总流程」驱动 smart-ask-data 第 7～11 步及多次子问题查询，再按启用子场景输出。
 
 ### 模式 B — 仅消费型（降级）
 
@@ -144,7 +144,7 @@ argument-hint:
 ## 与 `smart-data-analysis` 的交接（MUST）
 
 - 进入本 skill 前，**必须**已由 `smart-data-analysis` 注入 **`kn_id_ask_data`**（来自 `SOUL.md`）及运行上下文。
-- **同轮闭环**：默认路径下，第 7～11 步的取数编排、各子问题查询与洞察正文须在 **同一 assistant 回复** 内完成。
+- **同轮闭环**：默认路径下，smart-ask-data 第 7～11 步的取数编排、各子问题查询与洞察正文须在 **同一 assistant 回复** 内完成。
 - **与「单次问数终态」的关系**：用户仅要一条 SQL 结果、不要多子问题洞察时，总入口应只走 `smart-ask-data`，**不必**进入本 skill。
 
 ---
