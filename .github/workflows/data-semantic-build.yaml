@@ -5,7 +5,7 @@ on:
     tags:
       - "v*"
     paths:
-      - "gbkn/**"
+      - "dsg/services/apps/data-semantic/**"
       - ".github/workflows/data-semantic-build.yaml"
   workflow_dispatch:
     inputs:
@@ -18,8 +18,8 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAMESPACE: kweaver-ai
   SERVICE_NAME: data-semantic
-  CHART_DIR: gbkn/helm/data-semantic
-  BUILD_CONTEXT: gbkn
+  CHART_DIR: dsg/services/apps/data-semantic/helm/data-semantic
+  BUILD_CONTEXT: dsg/services/apps/data-semantic
   IMAGE_API: af/data-semantic
   IMAGE_CONSUMER: af/data-semantic-consumer
 
@@ -80,10 +80,10 @@ jobs:
       matrix:
         component:
           - name: api
-            dockerfile: gbkn/deploy/docker/Dockerfile.api
+            dockerfile: dsg/services/apps/data-semantic/deploy/docker/Dockerfile.api
             image: af/data-semantic
           - name: consumer
-            dockerfile: gbkn/deploy/docker/Dockerfile.consumer
+            dockerfile: dsg/services/apps/data-semantic/deploy/docker/Dockerfile.consumer
             image: af/data-semantic-consumer
         platform:
           - linux/amd64
@@ -151,8 +151,8 @@ jobs:
       fail-fast: false
       matrix:
         component:
-          - { name: api, dockerfile: gbkn/deploy/docker/Dockerfile.api }
-          - { name: consumer, dockerfile: gbkn/deploy/docker/Dockerfile.consumer }
+          - { name: api, dockerfile: dsg/services/apps/data-semantic/deploy/docker/Dockerfile.api }
+          - { name: consumer, dockerfile: dsg/services/apps/data-semantic/deploy/docker/Dockerfile.consumer }
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
