@@ -2,7 +2,7 @@
 
 > **维护说明**：本文为报告子技能**完整正文**（在此目录统一维护）。**总编排入口**：[`../SKILL.md`](../SKILL.md)。
 
-本 skill 的定位是：**把“找表结果 / 单次取数结果 / 数据洞察最终交付”写成一份可交付、可复核的报告**。它**不执行**任何检索、SQL或代码计算；**只消费输入**（即你已经从 `smart-search-tables` / `smart-ask-data` / `smart-data-insights`（含 **归因分析**子场景证据包）拿到的结果。
+本 skill 的定位是：**把“找表结果 / 单次取数结果 / 数据洞察 / 归因分析 最终交付”写成一份可交付、可复核的报告**。它**不执行**任何检索、SQL或代码计算；**只消费输入**（即你已经从 `smart-search-tables` / `smart-ask-data` / `smart-data-insights`（含 **归因分析**子场景证据包）拿到的结果。
 
 你可以把它理解为一个“报告写作层”：
 
@@ -36,7 +36,7 @@
 
 | 报告内顺序 | 步骤内容 |
 | --- | --- |
-| 1 | 识别报告场景（`table_search` / `sql_query` / `data_insights`；其中 `attribution_analysis_report` 为 `data_insights` 的归因报告子场景/变体） |
+| 1 | 识别报告场景（`table_search` / `sql_query` / `data_insights`；其中 `attribution_analysis_report` 为 `data_insights` 的归因报告子场景） |
 | 2 | 校验输入完整性（缺失即终止并返回补齐清单） |
 | 3 | 整理证据与口径（保持可复核） |
 | 4 | 生成标准报告结构（按场景模板） |
@@ -73,8 +73,9 @@
 
 ## 能力边界（MUST）
 
-- **单次回复闭环（与总编排一致）**：由 `smart-data-analysis` 触发的 **找表/问数/归因 + 报告** 链路中，本 skill 的输出须出现在 **产生上游最终交付的同一 assistant 回复** 的后续段落；**不得**以「请用户下一回合粘贴 `/smart-reporting …`」作为交付终态。
+- **单次回复闭环（与总编排一致）**：由 `smart-data-analysis` 触发的 **找表/问数/洞察/归因 + 报告** 链路中，本 skill 的输出须出现在 **产生上游最终交付的同一 assistant 回复** 的后续段落；**不得**以「请用户下一回合粘贴 `/smart-reporting …`」作为交付终态。
 - **归档与存盘（MUST）**：若用户要求“生成报告/文件/落盘/存盘”等交付形态（例如将 Markdown 报告保存为 `.md` 文件），必须遵守 `archive-protocol` 技能的约定进行生成物归档（路径、命名、覆盖策略、索引更新等以该协议为准）。
+- **标题括号注释禁止输出（MUST）**：报告模板中小标题后面的括号内容仅为技术性说明（如「口径卡片（必须）」中的「（必须）」），**对用户的最终报告正文禁止输出括号及其中内容**；仅输出括号前的小标题文本。
 - **章节必须写满（不得用引用句替代）**：报告的**每个章节**必须有**实际正文内容**与必要的表格/要点，**不允许**用「同撰写报告之前的输出的某一部分内容」「见上文/同上/略」等方式把章节简化成引用句来“占位”。若某章节确因输入证据不足而无法给出业务结论，必须在该章节内写明 **「不适用/不可判定」**、原因与**最小补数建议**（仍需满足本文件各场景框架的章节顺序与最小集合）。
 - **仅用输入写报告**：不得新增任何“表/字段/数据/结论”。
 - **不做取数**：不得调用 `smart-search-tables`、`smart-ask-data`、`text2sql`、`execute_code_sync`、`json2plot` 或任何等价取数/加工工具。
@@ -286,11 +287,11 @@
 
 ---
 
-### C. 归因分析报告框架（对应 **`smart-data-insights` 归因分析子场景** 完成取数后的“报告生成/组装输出”）
+### C. 归因分析报告框架（对应 **`smart-data-insights` 归因分析 `attribution_analysis` 子场景** 完成取数后的“报告生成/组装输出”）
 
-> 说明：归因取数编排已并入 `smart-data-insights`（见 [`attribution_analysis.md`](attribution_analysis.md)）；本节在 `smart-reporting` 中仅做**写作与组装**（不取数、不出图工具调用）。
+> 说明：归因取数编排已并入 `smart-data-insights`作为一个子场景（见 [`attribution_analysis.md`](attribution_analysis.md)）；本节在 `smart-reporting` 中仅做**写作与组装**（不取数、不出图工具调用）。
 
-#### 报告结构（深度归因报告，推荐固定顺序）
+#### 报告结构（归因分析报告，推荐固定顺序）
 
 1. **报告摘要**
    - 问题复述（来自输入）
@@ -315,7 +316,7 @@
    - 子问题编号 → SQL/结果/图表在报告中的位置（页内锚点/小节标题即可）
    - 附录可复列“使用到的表/视图清单、关键字段”，但不得新增未在输入出现的对象
 
-#### 注意事项（深度归因报告，MUST）
+#### 注意事项（归因分析报告，MUST）
 
 - **表格优先**：口径卡片、子问题清单、各子问题「结果数据」及可读性强的对比读数，**优先** Markdown **表格**（见「呈现形式（MUST：表格优先）」）。
 - **证据可复核**：任何根因/影响范围/建议的“依据数字”，必须能在输入的 SQL/结果/图中定位到。
@@ -607,7 +608,7 @@ LIMIT 20;
 /smart-reporting 场景=table_search；以下是 smart-search-tables 的最终交付结果：<粘贴原文或 JSON>
 /smart-reporting 场景=sql_query；以下是 smart-ask-data 的最终交付结果（含 SQL 与结果）：<粘贴原文或 JSON>
 /smart-reporting 场景=data_insights；以下是 smart-data-insights 的最终交付结果（含子场景清单/子问题证据/洞察结论）：<粘贴原文或 JSON>
-/smart-reporting 场景=attribution_analysis_report；以下是 smart-data-insights（归因分析子场景）的最终交付结果（含口径卡片/子问题证据/结论建议）：<粘贴原文或 JSON>
+/smart-reporting 场景=attribution_analysis_report；以下是 smart-data-insights（归因分析子场景`attribution_analysis`）的最终交付结果（含口径卡片/子问题证据/结论建议）：<粘贴原文或 JSON>
 ```
 
 生成报告时：在**不改动证据值**的前提下，**优先用 Markdown 表格**展示结果与可列表化口径（见上文「呈现形式（MUST：表格优先）」）。
