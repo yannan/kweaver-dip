@@ -4,15 +4,13 @@ import (
 	"context"
 	"flag"
 
-	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driven/resources"
-	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driven/workflow/custom"
-
 	af_go_frame "github.com/kweaver-ai/idrm-go-frame"
 	"github.com/kweaver-ai/idrm-go-frame/core/config"
 	"github.com/kweaver-ai/idrm-go-frame/core/config/sources/env"
 	"github.com/kweaver-ai/idrm-go-frame/core/config/sources/file"
 	"github.com/kweaver-ai/idrm-go-frame/core/telemetry/log"
 	"github.com/kweaver-ai/idrm-go-frame/core/telemetry/trace"
+	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driven/resources"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/common/form_validator"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/common/settings"
 )
@@ -28,7 +26,6 @@ var (
 
 type AppRunner struct {
 	App              *af_go_frame.App
-	nsq              *custom.WFConsumerRegister
 	resourceRegister *resources.RegisterClient
 }
 

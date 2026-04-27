@@ -22,22 +22,17 @@ import (
 	impl11 "github.com/kweaver-ai/idrm-go-common/rest/studio_web/impl"
 	"github.com/kweaver-ai/idrm-go-common/rest/user_management"
 	"github.com/kweaver-ai/idrm-go-common/trace"
-	"github.com/kweaver-ai/idrm-go-common/workflow"
 	"github.com/kweaver-ai/idrm-go-frame"
 	"github.com/kweaver-ai/idrm-go-frame/core/transport/rest"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driven/database"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driven/gorm"
-	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driven/mq"
-	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driven/mq/views"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driven/resources"
-	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driven/workflow/custom"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driver"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driver/v2/auth"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/adapter/driver/v2/data_auth"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/common/settings"
 	impl7 "github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/domain/common_auth/impl"
 	impl10 "github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/domain/data_auth/impl"
-	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/infrastructure/mq/kafka"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/infrastructure/repository/db"
 	"github.com/kweaver-ai/kweaver-dip/dsg/services/apps/auth-service/infrastructure/repository/redis"
 )
@@ -82,29 +77,11 @@ func InitApp(s *settings.Settings) (*AppRunner, func(), error) {
 		DataAuthV2:       data_authController,
 	}
 	server := driver.NewHttpServer(s, router)
-	consumer := kafka.NewConsumer()
-	authSubViewRepo := gorm.NewAuthSubViewRepo(gormDB)
-	subViewHandler := views.NewSubViewHandler(authSubViewRepo)
-	kafkaConsumer := mq.NewKafkaConsumer(consumer, subViewHandler)
-	app := newApp(server, kafkaConsumer)
-	mqConf, err := settings.WorkflowMQConfFor(s)
-	if err != nil {
-		return nil, nil, err
-	}
-	workflowInterface, err := workflow.NewWorkflow(client, mqConf)
-	if err != nil {
-		return nil, nil, err
-	}
-	consumeAuthRequestRepo := gorm.NewConsumeAuthRequestRepo(gormDB, client)
-	wfConsumerRegister, err := custom.NewWFConsumerRegister(workflowInterface, consumeAuthRequestRepo)
-	if err != nil {
-		return nil, nil, err
-	}
+	app := newApp(server)
 	studio_webDriven := impl11.NewDriven(client)
 	registerClient := resources.NewRegisterClient(authorizationDriven, studio_webDriven)
 	appRunner := &AppRunner{
 		App:              app,
-		nsq:              wfConsumerRegister,
 		resourceRegister: registerClient,
 	}
 	return appRunner, func() {
@@ -115,6 +92,6 @@ func InitApp(s *settings.Settings) (*AppRunner, func(), error) {
 
 var appRunnerSet = wire.NewSet(wire.Struct(new(AppRunner), "*"))
 
-func newApp(hs *rest.Server, consumer *mq.KafkaConsumer) *idrm_go_frame.App {
-	return idrm_go_frame.New(idrm_go_frame.Name(Name), idrm_go_frame.Server(hs, consumer))
+func newApp(hs *rest.Server) *idrm_go_frame.App {
+	return idrm_go_frame.New(idrm_go_frame.Name(Name), idrm_go_frame.Server(hs))
 }
