@@ -799,7 +799,8 @@ DIP 数字员工 Web 界面
 说明：
 
 - 删除数字员工时，服务会同步删除该数字员工名下的全部计划任务
-- `deleteFiles=false` 时仅删除 agent 配置，保留工作区文件；计划任务仍会被删除
+- 默认保留工作区文件和历史会话，仅删除 agent 配置；计划任务仍会被删除
+- `deleteFiles=true` 时会同时删除工作区文件
 
 响应：`204`
 
@@ -816,7 +817,7 @@ DIP 数字员工 Web 界面
 | creature | string | 否 | 数字员工岗位/角色 |
 | icon_id | string | 否 | 图标 ID |
 | soul | string | 否 | `SOUL.md` 内容 |
-| skills | string[] | 否 | 创建时要绑定的技能名称列表；重复值会按首次出现顺序去重。响应中 `skills` 为实际绑定的技能 id 列表 |
+| skills | string[] | 否 | 创建时要追加绑定的技能名称列表；后端会始终先绑定内置技能 `archive-protocol`、`schedule-plan`、`kweaver-core`，再追加该列表；重复值会按首次出现顺序去重。响应中 `skills` 为实际绑定的技能 id 列表 |
 
 响应：`201 application/json`
 
@@ -882,7 +883,7 @@ DIP 数字员工 Web 界面
 
 响应：`200 text/event-stream`
 
-返回 OpenResponse 风格 SSE 事件流。服务端通过 OpenClaw WebSocket `chat.send` 建立 Agent 消息流，自动生成随机 UUID 作为 `params.idempotencyKey`，并将 `chat` 文本帧、`agent/assistant` 文本帧以及 `agent/tool` 工具调用帧转换为 `response.created`、`response.output_item.added`、`response.output_text.delta`、`response.output_item.done`、`response.completed`、`response.failed` 等事件；其中 `agent/assistant.data.delta` 优先透传，缺失时回退为 `data.text`。
+返回 OpenResponse 风格 SSE 事件流。服务端通过 OpenClaw WebSocket `chat.send` 建立 Agent 消息流，自动生成随机 UUID 作为 `params.idempotencyKey`，并将 `chat` 文本帧、`agent/assistant` 文本帧以及 `agent/tool` 工具调用帧转换为 `response.created`、`response.output_item.added`、`response.output_text.delta`、`response.output_item.done`、`response.completed`、`response.failed` 等事件；其中 `agent/assistant.data.delta` 优先透传，缺失时回退为 `data.text`。服务会保持工具事件结构不变，但会在返回前对工具结果、工具错误、助手文本和失败消息中的密码、Token、Secret、API Key、Cookie、私钥、环境变量等敏感值进行脱敏；变量名或字段名会保留，敏感值替换为 `***`。
 
 当请求携带 `attachments` 时，服务会把文件路径列表追加到下游提示词中（隐藏上下文），用于兼容下游未直接消费 `attachments` 字段的场景。
 
