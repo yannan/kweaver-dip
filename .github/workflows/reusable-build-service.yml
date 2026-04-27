@@ -301,7 +301,9 @@ jobs:
           release_tag = os.environ["RELEASE_TAG"]
           chart_dir   = Path(os.environ["CHART_DIR"])
           override    = os.environ.get("IMAGE_REPOSITORY_OVERRIDE", "").strip()
-          repo        = override or f"kweaver-ai/{os.environ['IMAGE_NAME']}"
+          # IMAGE_NAME already includes the 'af/' prefix (e.g., af/auth-service),
+          # so use it directly without adding 'kweaver-ai/' prefix.
+          repo        = override or os.environ["IMAGE_NAME"]
 
           chart = chart_dir / "Chart.yaml"
           text = chart.read_text(encoding="utf-8")
