@@ -17,9 +17,3 @@
 **规范**：章节顺序与 MUST 约束以 [`../references/smart-reporting.md`](../references/smart-reporting.md) 为准。
 
 ---
-
-## 数据解读：规范索引（无独立模版文件）
-
-解读分支的输出结构、输入契约与 **S+1…S+7** 连续步进度见 **[`../references/smart-data-interpretation.md`](../references/smart-data-interpretation.md)**（在此维护完整正文）。当前 `assets` 下未单独提供解读填空模版；可直接按该文档「输出模板」章节撰写。
-
-**规范**：全文以 [`../references/smart-data-interpretation.md`](../references/smart-data-interpretation.md) 为准。

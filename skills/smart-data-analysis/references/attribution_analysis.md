@@ -133,12 +133,6 @@
 
 ---
 
-## 历史说明（迁移自独立技能）
-
-原仓库中曾将「深度归因」描述为独立 **`smart-attribution-analysis`** 技能，并以 **`text2sql show_ds` / `text2sql gen_exec`** 为主链路。**当前编排统一为**：在 **`smart-data-insights`** 下启用本子场景 **`attribution_analysis`**，取数与门禁 **一律遵循** [`smart-ask-data.md`](smart-ask-data.md) **第 7～11 步**（`kn-schema-search` → 判权 → `dataview get` → 生成 SQL → `dataview query`）。若部署侧仍保留旧 skill 入口，应 **转发/对齐** 至本文件与 [`smart-data-insights.md`](smart-data-insights.md)，避免双轨口径冲突。
-
----
-
 ## 调用示例（slash / 对内）
 
 ```text

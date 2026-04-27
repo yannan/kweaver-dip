@@ -48,8 +48,6 @@ argument-hint:
 
 - `smart-data-analysis`：总入口；将「数据洞察（含原数据解读诉求）」路由到本 skill，并保证 **`kn_id_ask_data`**（`SOUL.md`）、`token` / `base_url` / `user_id` / `date` 已对齐。
 - `smart-ask-data`：单次问数执行层；本 skill **不替代**其 Step 1–7，**通过编排多次调用**完成各子问题取数。
-- `smart-data-interpretation`：**已并入本 skill**；旧 slash 与 stub 仅作跳转说明（见 [../smart-data-interpretation/SKILL.md](../smart-data-interpretation/SKILL.md)）。
-- **归因分析子场景**（`attribution_analysis`，见 [references/attribution_analysis.md](references/attribution_analysis.md)）：在本 skill 内完成 **MECE 子问题取数证据包** 与归因要点；**标准归因分析报告正文**仍由 `smart-reporting`（`attribution_analysis_report`）在同轮组装。历史独立技能名 **`smart-attribution-analysis`** 仅作兼容指称，编排上应并入本 skill。
 - `smart-reporting`：基于既有交付写报告；若用户同轮要求「把洞察写成报告」，须在洞察完成后由总入口按 `smart-reporting` 交接。
 
 ---
