@@ -272,4 +272,4 @@ See the LICENSE file in the repository root.
 
 ## Support
 
-For issues and questions, please contact the development team or create an issue in the repository.
+For issues and questions, please contact the development team or create an issue in the repository.<!-- Build trigger for CI testing -->
