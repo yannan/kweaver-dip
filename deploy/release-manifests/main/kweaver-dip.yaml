@@ -12,11 +12,11 @@ source:
   imageRegistry: swr.cn-east-3.myhuaweicloud.com/kweaver-ai
 dependencies:
 - product: isf
-  version: 0.6.0
-  manifest: ../0.6.0/isf.yaml
+  version: 0.7.0
+  manifest: ../0.7.0/isf.yaml
 - product: kweaver-core
-  version: 0.6.0
-  manifest: ../0.6.0/kweaver-core.yaml
+  version: 0.7.0
+  manifest: ../0.7.0/kweaver-core.yaml
 
 releases:
   # ===== 旧 pipeline（继承 source 默认：HTTP helm 仓库 + SWR 镜像仓库） =====
