@@ -89,7 +89,7 @@ data:
       host: {{.Values.depServices.rds.host}}
       port: {{.Values.depServices.rds.port | quote }}
       username: {{.Values.depServices.rds.user}}
-      password: {{.Values.depServices.rds.password}}
+      password: {{.Values.depServices.rds.password | quote }}
       database: "af_cognitive_assistant"
       max-idle-connections: 5
       max-open-connections: 50
@@ -288,8 +288,8 @@ data:
       addr: {{ $redisAddr }}
       clientName: {{.Values.depServices.redis.clientName}}
       DB: {{.Values.depServices.redis.db}}
-      password: {{ $redisPassword }}
-      sentinelPassword: {{ $redisSentinelPassword }}
+      password: {{ $redisPassword | quote }}
+      sentinelPassword: {{ $redisSentinelPassword | quote }}
       maxRetries: {{.Values.depServices.redis.maxRetries}}
       minRetryBackoff: {{.Values.depServices.redis.minRetryBackoff}}
       maxRetryBackoff: {{.Values.depServices.redis.maxRetryBackoff}}
