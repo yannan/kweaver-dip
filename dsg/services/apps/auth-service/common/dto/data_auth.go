@@ -7,9 +7,9 @@ type DataResourceAuthReqArg struct {
 }
 
 type DataResourceAuthRequest struct {
-	Applicant      string   `json:"applicant" binding:"required,uuid"`   //申请人
-	ApplicantName  string   `json:"applicant_name" binding:"required"`   //申请人名称
-	ApplicantType  string   `json:"applicant_type" binding:"required"`   //申请人类型
-	AuthOperations []string `json:"auth_operations" binding:"omitempty"` //授权操作列表
-	ExpiredAt      int64    `json:"expired_at" binding:"required"`       //权限过期时间时间戳
+	ApplicantID    string   `json:"applicant_id" binding:"required,uuid"` //申请人
+	ApplicantName  string   `json:"applicant_name" binding:"required"`    //申请人名称
+	ApplicantType  string   `json:"applicant_type" binding:"required"`    //申请人类型
+	AuthOperations []string `json:"auth_operations" binding:"omitempty"`  //授权操作列表
+	ExpiredAt      int64    `json:"expired_at" binding:"omitempty"`       //权限过期时间时间戳
 }

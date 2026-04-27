@@ -2,8 +2,8 @@ package impl
 
 import (
 	"context"
-	"fmt"
 	"strings"
+	"time"
 
 	"github.com/kweaver-ai/idrm-go-common/rest/authorization"
 	"github.com/kweaver-ai/idrm-go-common/rest/automation"
@@ -46,17 +46,21 @@ func (u *useCase) DataResourceAuth(ctx context.Context, req *dto.DataResourceAut
 		return err
 	}
 	for _, resource := range resources {
+		expiration := "永不过期"
+		if req.ExpiredAt > time.Now().Unix() {
+			expiration = time.Unix(req.ExpiredAt, 0).Format(time.DateTime)
+		}
 		//调用运行流程
 		payload := map[string]any{
-			"data_id":         resource.Id,
-			"data_name":       fmt.Sprintf("%s：%s", resource.DataSourceName, resource.Name),
-			"data_type":       authorization.DATA_VIEW_RESOURCE_NAME,
+			"data_view_id":    resource.Id,
+			"data_view_name":  resource.Name,
+			"datasource_name": resource.DataSourceName,
 			"applicant_type":  req.ApplicantType,
-			"applicant_id":    req.Applicant,
+			"applicant_id":    req.ApplicantID,
 			"applicant_name":  req.ApplicantName,
 			"operations":      strings.Join(req.AuthOperations, ","),
 			"operations_name": strings.Join(authorization.GetViewOperationDisplay(req.AuthOperations), ","),
-			"expired_at":      req.ExpiredAt,
+			"expiration":      expiration,
 		}
 		//参数置换
 		args := make(map[string]any)
