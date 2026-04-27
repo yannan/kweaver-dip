@@ -83,83 +83,68 @@ releases:
   # ===== 新 pipeline（OCI + ghcr，由 kweaver-dip github-action pipeline 维护） =====
   # 每条 entry 的 version 固定为 "main-latest"，CI 在 push main 时校验。
   # bump VERSION 文件不需要改这一段。
+  # imageRegistry 回退到 source.imageRegistry（SWR），不在 per-release 层覆盖。
   auth-service:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: auth-service
     version: main-latest
   basic-search:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: basic-search
     version: main-latest
   configuration-center:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: configuration-center
     version: main-latest
   data-application-gateway:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: data-application-gateway
     version: main-latest
   data-application-service:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: data-application-service
     version: main-latest
   data-catalog:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: data-catalog
     version: main-latest
   data-exploration-service:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: data-exploration-service
     version: main-latest
   data-subject:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: data-subject
     version: main-latest
   data-view:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: data-view
     version: main-latest
   anyfabric-frontend:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: anyfabric-frontend
     version: main-latest
   sailor:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: sailor
     version: main-latest
   sailor-agent:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: sailor-agent
     version: main-latest
   sailor-service:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: sailor-service
     version: main-latest
   session:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: session
     version: main-latest
   standardization:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: standardization
     version: main-latest
   task-center:
     helmRepoUrl: oci://ghcr.io/kweaver-ai/charts
-    imageRegistry: ghcr.io/kweaver-ai
     chart: task-center
     version: main-latest
