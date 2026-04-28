@@ -1,18 +1,9 @@
-"""
-内置工具箱配置
-"""
-
 from __future__ import annotations
-
 from pathlib import Path
 
 from config import settings
 
-# 配置API和数据库连接信息
-API_BASE_URL = "http://{host}:{port}/api/agent-operator-integration/internal-v1".format(
-    host=settings.AGENT_OPERATOR_INTEGRATION_HOST,
-    port=settings.AGENT_OPERATOR_INTEGRATION_PORT,
-)
+API_BASE_URL = "http://agent-operator-integration:9000/api/agent-operator-integration/internal-v1"
 
 openapi_file_path = Path(__file__).parent / "openai"
 
@@ -43,13 +34,6 @@ _raw_tool_box_configs = [
 
 
 def _filter_existing_openapi_files(configs: list[dict]) -> list[dict]:
-    """
-    由于本次迁移不包含 `openapi/` 配置文件，为避免初始化阶段直接失败，
-    这里在文件不存在时自动跳过对应工具箱配置。
-
-    后续只要把 openapi 文件补齐（放到 `openapi_file_path` 目录下），配置会自动生效。
-    """
-
     filtered: list[dict] = []
     for cfg in configs:
         file_path: Path = cfg.get("file_path")  # type: ignore[assignment]
@@ -59,4 +43,3 @@ def _filter_existing_openapi_files(configs: list[dict]) -> list[dict]:
 
 
 tool_box_configs = _filter_existing_openapi_files(_raw_tool_box_configs)
-

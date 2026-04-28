@@ -9,4 +9,4 @@ if [ -z "$NAMESPACE" ]; then
 fi
 
 echo "使用命名空间: $NAMESPACE"
-kubectl exec -it svc/sailor-agent -n "$NAMESPACE" -- python3 /data_migrations/init/manage_built_in_agent_and_tool.py --update
+# kubectl exec -it svc/sailor-agent -n "$NAMESPACE" -- python3 /home/app/data_migrations/init/manage_built_in_agent_and_tool.py --update
