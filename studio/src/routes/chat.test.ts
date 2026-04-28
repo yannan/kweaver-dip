@@ -22,8 +22,25 @@ import {
   readRequiredSessionKeyHeader,
   readRequiredUserIdHeader,
   resolveChatAgentSessionLabel,
-  writeEventStreamHeaders
+  writeEventStreamHeaders,
+  pipeEventStream
 } from "./chat";
+import { setSpanAttributes } from "../infra/otel/tracing";
+
+vi.mock("@opentelemetry/api", () => ({
+  trace: {
+    getActiveSpan: vi.fn()
+  }
+}));
+
+vi.mock("../infra/otel/tracing", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../infra/otel/tracing")>();
+
+  return {
+    ...actual,
+    setSpanAttributes: vi.fn()
+  };
+});
 
 /**
  * Creates a minimal response double with chainable methods.
@@ -443,5 +460,91 @@ describe("createChatRouter", () => {
       ]
     });
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it("falls back to getSession when getChatMessages is unavailable", async () => {
+    const getSession = vi.fn().mockResolvedValue({
+      sessionKey: "agent:demo:user:user-1:direct:chat-1",
+      messages: []
+    });
+    const router = createChatRouter({
+      sessionsLogic: {
+        getChatMessages: undefined,
+        getSession,
+        listSessions: vi.fn(),
+        deleteSession: vi.fn(),
+        getSessionSummary: vi.fn(),
+        getSessionArchives: vi.fn(),
+        getSessionArchiveSubpath: vi.fn(),
+        previewSessions: vi.fn()
+      }
+    }) as any;
+    const layer = findRouteLayer(router, "/api/dip-studio/v1/chat/messages", "get");
+    const handler = layer?.route?.stack[0]?.handle;
+    const response = createResponseDouble();
+    const next = vi.fn<NextFunction>();
+
+    await handler({
+      headers: {
+        "x-openclaw-session-key": "agent:demo:user:user-1:direct:chat-1"
+      },
+      query: {}
+    } as Request, response, next);
+
+    expect(getSession).toHaveBeenCalledWith({
+      key: "agent:demo:user:user-1:direct:chat-1",
+      limit: undefined
+    });
+  });
+
+  it("forwards non-http errors from chat history as 502", async () => {
+    const router = createChatRouter({
+      sessionsLogic: {
+        getChatMessages: vi.fn().mockRejectedValue(new Error("boom")),
+        getSession: vi.fn(),
+        listSessions: vi.fn(),
+        deleteSession: vi.fn(),
+        getSessionSummary: vi.fn(),
+        getSessionArchives: vi.fn(),
+        getSessionArchiveSubpath: vi.fn(),
+        previewSessions: vi.fn()
+      }
+    }) as any;
+    const layer = findRouteLayer(router, "/api/dip-studio/v1/chat/messages", "get");
+    const handler = layer?.route?.stack[0]?.handle;
+    const response = createResponseDouble();
+    const next = vi.fn<NextFunction>();
+
+    await handler({
+      headers: {
+        "x-openclaw-session-key": "agent:demo:user:user-1:direct:chat-1"
+      },
+      query: {}
+    } as Request, response, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 502,
+      message: "Failed to query chat messages"
+    }));
+  });
+});
+
+describe("chat stream helpers", () => {
+  it("pipes readable stream chunks and always closes the downstream response", async () => {
+    const response = {
+      write: vi.fn(),
+      end: vi.fn()
+    } as unknown as Response;
+
+    await pipeEventStream(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("one"));
+        controller.enqueue(new TextEncoder().encode("two"));
+        controller.close();
+      }
+    }), response);
+
+    expect(response.write).toHaveBeenCalledTimes(2);
+    expect(response.end).toHaveBeenCalledOnce();
   });
 });

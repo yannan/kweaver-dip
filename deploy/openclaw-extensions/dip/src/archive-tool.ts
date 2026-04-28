@@ -6,6 +6,7 @@ import {
   type ArchiveCommandKind
 } from "./archive-command.js";
 import { resolveArchiveRuntimeContext } from "./archive-context.js";
+import { otelContextStore, withChildSpan } from "./otel-trace.js";
 
 const ARCHIVE_PROTOCOL_TOOL_INPUT_SCHEMA = {
   type: "object",
@@ -54,7 +55,7 @@ export function registerArchiveProtocolIntegrations(api: OpenClawPluginApi): voi
       name: "archive",
       description: "Apply archive protocol rules (plan/file)",
       parameters: ARCHIVE_PROTOCOL_TOOL_INPUT_SCHEMA,
-      execute: async (_toolCallId: string, args: any) => {
+      execute: async (toolCallId: string, args: any) => {
         const normalized = normalizeArchiveProtocolToolInput(args);
         if (!normalized.ok) {
           return {
@@ -66,7 +67,16 @@ export function registerArchiveProtocolIntegrations(api: OpenClawPluginApi): voi
             ]
           };
         }
-        const text = await invokeArchiveProtocol(normalized.value, toolCtx, api);
+        const parentToolSpan = otelContextStore.getToolSpan(toolCallId);
+        const text =
+          parentToolSpan === undefined
+            ? await invokeArchiveProtocol(normalized.value, toolCtx, api)
+            : await withChildSpan(
+              "dip.archive.execute",
+              parentToolSpan.context,
+              {},
+              () => invokeArchiveProtocol(normalized.value, toolCtx, api)
+            );
         return {
           content: [
             {

@@ -8,5 +8,9 @@
     "extensions": [
       "./index.ts"
     ]
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/core": "^2.7.0"
   }
 }

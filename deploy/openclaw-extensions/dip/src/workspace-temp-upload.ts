@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { withChildSpan } from "./otel-trace.js";
 
 /** Maximum upload body size for workspace temp uploads (bytes). */
 const MAX_WORKSPACE_TEMP_UPLOAD_BYTES = 32 * 1024 * 1024;
@@ -309,11 +310,18 @@ export function registerWorkspaceTempUpload(api: OpenClawPluginApi): void {
         const upload = isMultipart
           ? parseMultipartUploadFile(body, contentType)
           : { payload: body, filename: undefined };
-        const result = await writeWorkspaceTempUpload(
-          workspaceDir,
-          upload.payload,
-          upload.filename,
-          url.searchParams.get("session")
+        const result = await withChildSpan(
+          "dip.workspace_temp.upload",
+          undefined,
+          {
+            "gen_ai.conversation.id": url.searchParams.get("session") ?? undefined
+          },
+          () => writeWorkspaceTempUpload(
+            workspaceDir,
+            upload.payload,
+            upload.filename,
+            url.searchParams.get("session")
+          )
         );
 
         res.statusCode = 200;

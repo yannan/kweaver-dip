@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import { Router, type NextFunction, type Request, type Response } from "express";
+import { trace } from "@opentelemetry/api";
 
 import { OpenClawSessionsGatewayAdapter } from "../adapters/openclaw-sessions-adapter";
 import { HttpError } from "../errors/http-error";
@@ -9,6 +10,7 @@ import {
   type OpenClawChatAgentClient
 } from "../infra/openclaw-chat-agent-client";
 import { OpenClawGatewayClient } from "../infra/openclaw-gateway-client";
+import { setSpanAttributes } from "../infra/otel/tracing";
 import { DefaultSessionsLogic, type SessionsLogic } from "../logic/sessions";
 import type {
   ChatAgentInputItem,
@@ -149,6 +151,8 @@ export function createChatRouter(
         const requestBody = readChatAgentRequestBody(request.body);
         const sessionKey = readRequiredSessionKeyHeader(request.headers);
         const agentId = readAgentIdFromSessionKey(sessionKey);
+        const userId = readRequiredUserIdHeader(request.headers["x-user-id"]);
+        const idempotencyKey = randomUUID();
         const sessionLabel = await resolveChatAgentSessionLabel(
           sessionsLogic,
           sessionKey,
@@ -158,12 +162,23 @@ export function createChatRouter(
           requestBody.message,
           requestBody.attachments
         );
+
+        const activeSpan = trace.getActiveSpan();
+        if (activeSpan !== undefined) {
+          setSpanAttributes(activeSpan, {
+            "gen_ai.agent.id": agentId,
+            "gen_ai.conversation.id": sessionKey,
+            "user.id": userId,
+            "request.idempotency_key": idempotencyKey
+          });
+        }
+
         const upstreamResponse = await chatAgentClient.createResponseStream(
           {
             sessionKey,
             message,
             attachments: requestBody.attachments,
-            idempotencyKey: randomUUID(),
+            idempotencyKey,
             sessionLabel
           },
           agentId,

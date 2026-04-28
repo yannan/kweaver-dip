@@ -21,6 +21,7 @@ import {
   readAssistantText,
   readChatEventPayload,
   readChatSendAckPayload,
+  readIncrementalText,
   readTextAgentEventPayload,
   readToolAgentEventPayload
 } from "./openclaw-chat-agent-client";
@@ -140,6 +141,30 @@ describe("chat agent helpers", () => {
         sessionKey: "main",
         message: "hello",
         idempotencyKey: "run-1"
+      }
+    });
+    expect(
+      createChatSendRequest("req-2", {
+        sessionKey: "main",
+        message: "hello",
+        idempotencyKey: "run-2",
+        _otel: {
+          traceparent:
+            "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+        }
+      })
+    ).toEqual({
+      type: "req",
+      id: "req-2",
+      method: "chat.send",
+      params: {
+        sessionKey: "main",
+        message: "hello",
+        idempotencyKey: "run-2",
+        _otel: {
+          traceparent:
+            "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+        }
       }
     });
   });
@@ -482,6 +507,13 @@ describe("chat agent helpers", () => {
       readTextAgentEventPayload({
         type: "event",
         event: "agent",
+        payload: "bad-payload" as never
+      })
+    ).toThrow("OpenClaw assistant text event is missing runId");
+    expect(() =>
+      readTextAgentEventPayload({
+        type: "event",
+        event: "agent",
         payload: {
           runId: "run-1",
           seq: 1,
@@ -494,6 +526,19 @@ describe("chat agent helpers", () => {
         }
       })
     ).toThrow("OpenClaw assistant text event delta must be a string");
+    expect(() =>
+      readToolAgentEventPayload({
+        type: "event",
+        event: "agent",
+        payload: {
+          runId: "run-1",
+          seq: 1,
+          stream: "tool",
+          ts: 1,
+          data: "bad-data" as never
+        }
+      })
+    ).toThrow("OpenClaw tool event is missing phase");
     expect(() =>
       readToolAgentEventPayload({
         type: "event",
@@ -1698,6 +1743,31 @@ describe("DefaultOpenClawChatAgentClient", () => {
     expect(socket.closed).toBe(true);
   });
 
+  it("derives incremental text and abort cleanup for helper edge cases", () => {
+    expect(readIncrementalText("hello", "hello world")).toBe(" world");
+    expect(readIncrementalText("hello", "goodbye")).toBe("goodbye");
+
+    const noopCleanup = attachAbortSignal(undefined, vi.fn());
+    expect(noopCleanup).not.toThrow();
+
+    const immediateAbortController = new AbortController();
+    immediateAbortController.abort();
+    const immediateListener = vi.fn();
+    const immediateCleanup = attachAbortSignal(
+      immediateAbortController.signal,
+      immediateListener
+    );
+    expect(immediateListener).toHaveBeenCalledOnce();
+    expect(immediateCleanup).not.toThrow();
+
+    const controller = new AbortController();
+    const listener = vi.fn();
+    const cleanup = attachAbortSignal(controller.signal, listener);
+    cleanup();
+    controller.abort();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it("reloads websocket connection settings before opening a stream", async () => {
     const socket = new FakeWebSocket();
     const createWebSocket = vi.fn(() => socket);
@@ -1746,6 +1816,36 @@ describe("DefaultOpenClawChatAgentClient", () => {
     abortController.abort();
     await expect(pending).rejects.toMatchObject({
       statusCode: 499
+    });
+  });
+
+  it("uses constructor connection settings when no config reader is provided", async () => {
+    const socket = new FakeWebSocket();
+    const createWebSocket = vi.fn(() => socket);
+    const client = new DefaultOpenClawChatAgentClient(
+      {
+        url: "ws://127.0.0.1:18789",
+        token: "static-token",
+        timeoutMs: 1_000,
+        deviceIdentity: loadDeviceIdentityFromAssets()
+      },
+      createWebSocket
+    );
+
+    const pending = client.createResponseStream(
+      {
+        sessionKey: "agent:agent-1:user:user-1:direct:chat-1",
+        message: "hello"
+      },
+      "agent-1"
+    );
+
+    expect(createWebSocket).toHaveBeenCalledWith("ws://127.0.0.1:18789");
+
+    socket.emit("close");
+
+    await expect(pending).rejects.toMatchObject({
+      statusCode: 502
     });
   });
 });

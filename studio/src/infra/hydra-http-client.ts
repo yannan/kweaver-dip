@@ -1,4 +1,12 @@
+import { context, trace } from "@opentelemetry/api";
+
 import { HttpError } from "../errors/http-error";
+import { fetchWithTrace } from "./http/fetch-with-trace";
+import {
+  recordError,
+  setSpanAttributes,
+  startInternalSpan
+} from "./otel/tracing";
 import type {
   HydraIntrospectTokenRequest,
   HydraIntrospectTokenResponse
@@ -67,25 +75,46 @@ export class DefaultHydraHttpClient implements HydraHttpClient {
     token: string,
     signal?: AbortSignal
   ): Promise<HydraIntrospectTokenResponse> {
-    const response = await this.fetchImpl(
-      buildHydraIntrospectUrl(this.options.adminUrl),
-      {
-        method: "POST",
-        headers: createHydraIntrospectHeaders(),
-        body: createHydraIntrospectRequestBody({
-          token
-        }),
-        signal
+    const span = startInternalSpan("studio.auth.hydra_introspect", {
+      attributes: {
+        "upstream.service": "hydra",
+        "http.request.method": "POST"
       }
-    ).catch((error: unknown) => {
-      throw normalizeHydraHttpError(error);
     });
+    const spanContext = trace.setSpan(context.active(), span);
 
-    if (!response.ok) {
-      throw await createHydraStatusError(response);
+    try {
+      const response = await fetchWithTrace(
+        this.fetchImpl,
+        buildHydraIntrospectUrl(this.options.adminUrl),
+        {
+          method: "POST",
+          headers: createHydraIntrospectHeaders(),
+          body: createHydraIntrospectRequestBody({
+            token
+          }),
+          signal
+        },
+        spanContext
+      ).catch((error: unknown) => {
+          throw normalizeHydraHttpError(error);
+        });
+
+      setSpanAttributes(span, {
+        "http.response.status_code": response.status
+      });
+
+      if (!response.ok) {
+        throw await createHydraStatusError(response);
+      }
+
+      return await response.json() as HydraIntrospectTokenResponse;
+    } catch (error) {
+      recordError(span, error);
+      throw error;
+    } finally {
+      span.end();
     }
-
-    return await response.json() as HydraIntrospectTokenResponse;
   }
 }
 

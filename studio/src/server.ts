@@ -1,4 +1,5 @@
 import { createApp } from "./app";
+import { initOtel } from "./infra/otel/init";
 import { connectOpenClawGatewayIfInitialized } from "./logic/openclaw-gateway-bootstrap";
 import { getEnv } from "./utils/env";
 
@@ -24,6 +25,7 @@ export function startServer(port: number) {
  * @returns The created Node.js HTTP server.
  */
 export async function bootstrapServer() {
+  await initOtel();
   await connectOpenClawGatewayIfInitialized();
 
   return startServer(env.port);

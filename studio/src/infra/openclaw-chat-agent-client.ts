@@ -1,6 +1,11 @@
 import {
   randomUUID
 } from "node:crypto";
+import {
+  SpanStatusCode,
+  context,
+  trace
+} from "@opentelemetry/api";
 
 import { HttpError } from "../errors/http-error";
 import {
@@ -18,6 +23,15 @@ import {
   type OpenClawWebSocket,
   type OpenClawWebSocketFactory
 } from "./openclaw-gateway-client";
+import {
+  injectContextToOpenClawPayload,
+  type OpenClawOtelCarrier
+} from "./otel/propagation";
+import {
+  recordError,
+  setSpanAttributes,
+  startInternalSpan
+} from "./otel/tracing";
 import { ChatAgentAttachment } from "../types/chat-agent";
 import type { OpenClawGatewayRuntimeConfig } from "../utils/env";
 import { redactSensitiveText, redactSensitiveValue } from "../utils/redaction";
@@ -52,6 +66,11 @@ export interface OpenClawChatSendParams {
    * Attachments sent by the client.
    */
   attachments?: ChatAgentAttachment[];
+
+  /**
+   * Optional trace propagation payload forwarded to OpenClaw hooks.
+   */
+  _otel?: OpenClawOtelCarrier;
 }
 
 /**
@@ -403,6 +422,7 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
     signal?: AbortSignal
   ): Promise<OpenClawChatAgentStreamResult> {
     const connectionOptions = this.getConnectionOptions();
+    const parentContext = context.active();
 
     return new Promise<OpenClawChatAgentStreamResult>((resolve, reject) => {
       const socket = this.createWebSocket(connectionOptions.url);
@@ -424,6 +444,27 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
       let textEventSource: "chat" | "assistant" | undefined;
       const outputItems: Record<string, unknown>[] = [];
       const outputIndexByItemId = new Map<string, number>();
+      const connectSpan = startInternalSpan(
+        "studio.openclaw.connect",
+        {
+          attributes: {
+            "upstream.service": "openclaw"
+          }
+        },
+        parentContext
+      );
+      let sessionPatchSpan: ReturnType<typeof startInternalSpan> | undefined;
+      let chatSendSpan: ReturnType<typeof startInternalSpan> | undefined;
+      const streamSpan = startInternalSpan(
+        "studio.openclaw.stream",
+        {
+          attributes: {
+            "gen_ai.conversation.id": request.sessionKey,
+            "upstream.service": "openclaw"
+          }
+        },
+        parentContext
+      );
 
       const stream = new ReadableStream<Uint8Array>({
         start(streamController) {
@@ -442,6 +483,13 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
 
       const cleanupAbortListener = attachAbortSignal(signal, () => {
         if (!terminal) {
+          streamSpan.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: "request_aborted"
+          });
+          setSpanAttributes(streamSpan, {
+            "studio.abort.reason": "request_aborted"
+          });
           terminal = true;
           socket.close();
           if (!streamResolved) {
@@ -471,6 +519,7 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
         terminal = true;
         cleanupAbortListener();
         controller?.close();
+        streamSpan.end();
         socket.close();
       };
 
@@ -481,6 +530,8 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
 
         terminal = true;
         cleanupAbortListener();
+        recordError(streamSpan, error);
+        streamSpan.end();
         socket.close();
         reject(error);
       };
@@ -510,6 +561,11 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
         enqueueSseEvent(enqueue, {
           type: "response.failed",
           response
+        });
+
+        streamSpan.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: redactedMessage
         });
 
         completeStream();
@@ -662,11 +718,25 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
             isGatewayResponse(frame, connectRequestId)
           ) {
             if (frame.ok !== true) {
-              failBeforeResolve(createGatewayError(frame, "OpenClaw connect failed"));
+              const error = createGatewayError(frame, "OpenClaw connect failed");
+              recordError(connectSpan, error);
+              connectSpan.end();
+              failBeforeResolve(error);
               return;
             }
 
+            connectSpan.end();
             connectRequestId = undefined;
+            sessionPatchSpan = startInternalSpan(
+              "studio.openclaw.sessions_patch",
+              {
+                attributes: {
+                  "gen_ai.conversation.id": request.sessionKey,
+                  "upstream.service": "openclaw"
+                }
+              },
+              parentContext
+            );
             socket.send(
               JSON.stringify(
                 createSessionsPatchRequest(
@@ -683,27 +753,58 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
             isGatewayResponse(frame, sessionPatchRequestId)
           ) {
             if (frame.ok !== true) {
-              failBeforeResolve(createGatewayError(frame, "OpenClaw sessions.patch failed"));
+              const error = createGatewayError(frame, "OpenClaw sessions.patch failed");
+              if (sessionPatchSpan !== undefined) {
+                recordError(sessionPatchSpan, error);
+                sessionPatchSpan.end();
+              }
+              failBeforeResolve(error);
               return;
             }
 
+            sessionPatchSpan?.end();
             sessionPatchRequestId = undefined;
-            socket.send(JSON.stringify(createChatSendRequest(chatRequestId, {
-              sessionKey: request.sessionKey,
-              message: request.message,
-              idempotencyKey: request.idempotencyKey,
-              attachments: request.attachments
-            })));
+            chatSendSpan = startInternalSpan(
+              "studio.openclaw.chat_send",
+              {
+                attributes: {
+                  "gen_ai.conversation.id": request.sessionKey,
+                  "upstream.service": "openclaw"
+                }
+              },
+              parentContext
+            );
+            socket.send(JSON.stringify(createChatSendRequest(
+              chatRequestId,
+              injectContextToOpenClawPayload(
+                {
+                  sessionKey: request.sessionKey,
+                  message: request.message,
+                  idempotencyKey: request.idempotencyKey,
+                  attachments: request.attachments
+                },
+                trace.setSpan(parentContext, streamSpan)
+              )
+            )));
             return;
           }
 
           if (isGatewayResponse(frame, chatRequestId)) {
             if (frame.ok !== true) {
-              failBeforeResolve(createGatewayError(frame, "OpenClaw chat.send failed"));
+              const error = createGatewayError(frame, "OpenClaw chat.send failed");
+              if (chatSendSpan !== undefined) {
+                recordError(chatSendSpan, error);
+                chatSendSpan.end();
+              }
+              failBeforeResolve(error);
               return;
             }
 
             ackPayload = readChatSendAckPayload(frame);
+            chatSendSpan?.end();
+            setSpanAttributes(streamSpan, {
+              "gen_ai.agent.run_id": ackPayload.runId
+            });
             resolveStream();
             return;
           }
@@ -936,6 +1037,7 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
 
       socket.on("error", (error: unknown) => {
         const normalizedError = asTransportError(error);
+        recordError(streamSpan, normalizedError);
 
         if (!streamResolved) {
           failBeforeResolve(normalizedError);

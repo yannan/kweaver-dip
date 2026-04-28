@@ -242,7 +242,8 @@ describe("createChatAgentRouter", () => {
         ]
       },
       headers: {
-        "x-openclaw-session-key": "agent:agent-1:user:user-1:direct:chat-1"
+        "x-openclaw-session-key": "agent:agent-1:user:user-1:direct:chat-1",
+        "x-user-id": "user-1"
       },
       on: vi.fn()
     } as unknown as Request;

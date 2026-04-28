@@ -15,11 +15,18 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@kweaver-ai/kweaver-sdk": "^0.7.1",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/core": "^2.7.0",
+    "@opentelemetry/exporter-trace-otlp-proto": "^0.215.0",
+    "@opentelemetry/resources": "^2.7.0",
+    "@opentelemetry/sdk-node": "^0.215.0",
+    "@opentelemetry/sdk-trace-base": "^2.7.0",
+    "@opentelemetry/semantic-conventions": "^1.40.0",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "multer": "^2.1.1",
-    "openclaw": "2026.3.11",
-    "@kweaver-ai/kweaver-sdk": "^0.7.1"
+    "openclaw": "2026.3.11"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { context, trace } from "@opentelemetry/api";
 
 import { HttpError } from "../errors/http-error";
 import {
@@ -48,6 +49,19 @@ describe("createHydraStatusError", () => {
     ).resolves.toMatchObject({
       statusCode: 502,
       message: "Hydra /admin/oauth2/introspect returned HTTP 401: denied"
+    });
+  });
+
+  it("falls back to status-only message when body is empty", async () => {
+    await expect(
+      createHydraStatusError(
+        new Response("", {
+          status: 500
+        })
+      )
+    ).resolves.toMatchObject({
+      statusCode: 502,
+      message: "Hydra /admin/oauth2/introspect returned HTTP 500"
     });
   });
 });
@@ -116,5 +130,44 @@ describe("DefaultHydraHttpClient", () => {
       statusCode: 502,
       message: "Hydra /admin/oauth2/introspect returned HTTP 401: denied"
     });
+  });
+
+  it("injects trace headers into the Hydra request", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        active: true,
+        sub: "user-1"
+      }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json"
+        }
+      })
+    );
+    const client = new DefaultHydraHttpClient(
+      {
+        adminUrl: "http://127.0.0.1:4445",
+        timeoutMs: 1_000
+      },
+      fetchImpl
+    );
+    const activeContext = trace.setSpan(
+      context.active(),
+      trace.wrapSpanContext({
+        traceId: "0123456789abcdef0123456789abcdef",
+        spanId: "0123456789abcdef",
+        traceFlags: 1
+      })
+    );
+
+    await context.with(activeContext, () =>
+      client.introspectAccessToken("token-1")
+    );
+
+    const requestHeaders = fetchImpl.mock.calls[0]?.[1]?.headers as Headers;
+
+    expect(String(requestHeaders.get("traceparent"))).toMatch(
+      /^00-[0-9a-f]{32}-[0-9a-f]{16}-0[0-9a-f]$/
+    );
   });
 });

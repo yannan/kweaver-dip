@@ -7,3 +7,9 @@ data:
   NODE_ENV: {{ .Values.studio.nodeEnv | quote }}
   KWEAVER_HYDRA_ADMIN_URL: {{ .Values.studio.KWeaverHydraAdminURL | quote }}
   USE_EXTERNAL_OPENCLAW: {{ .Values.studio.useExternalOpenClaw | quote }}
+  OTEL_TRACE_ENABLED: {{ .Values.studio.otel.traceEnabled | quote }}
+  OTEL_SERVICE_NAME: {{ .Values.studio.otel.serviceName | quote }}
+  OTEL_SERVICE_VERSION: {{ .Values.studio.otel.serviceVersion | quote }}
+  OTEL_ENVIRONMENT: {{ .Values.studio.otel.environment | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.studio.otel.exporterOtlpEndpoint | quote }}
+  OTEL_TRACE_SAMPLING_RATE: {{ .Values.studio.otel.traceSamplingRate | quote }}

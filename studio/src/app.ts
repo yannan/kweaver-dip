@@ -1,6 +1,7 @@
 import express, { type Express, type Request, type Response } from "express";
 
 import { HttpError } from "./errors/http-error";
+import { createChatAgentTracingMiddleware } from "./infra/otel/tracing";
 import { errorHandler } from "./middleware/error-handler";
 import { createHydraAuthMiddleware } from "./middleware/hydra-auth";
 import { notFoundHandler } from "./middleware/not-found";
@@ -51,6 +52,7 @@ export function createApp(options: AppOptions = {}): Express {
 
   app.disable("x-powered-by");
   app.use(express.json());
+  app.use(createChatAgentTracingMiddleware());
   app.use(createHydraAuthMiddleware());
   app.use(createHealthRouter());
   app.use(createGuideRouter());

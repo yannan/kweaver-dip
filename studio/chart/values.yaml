@@ -49,6 +49,13 @@ studio:
   OpenClawHostPath: /root/.openclaw/
   KWeaverHydraAdminURL: http://hydra-admin:4445
   useExternalOpenClaw: false
+  otel:
+    traceEnabled: false
+    serviceName: studio
+    serviceVersion: ""
+    environment: ""
+    exporterOtlpEndpoint: ""
+    traceSamplingRate: "1.0"
 
 resources:
   init:
