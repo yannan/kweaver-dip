@@ -64,8 +64,8 @@ func LocalToken() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenID := c.GetHeader("Authorization")
 		userInfo := &middleware.User{
-			ID:   "82cdcd86-dbf1-11f0-af22-f69a51d1d671",
-			Name: "zyy",
+			ID:   "eb4dae48-3e12-11f1-b0e8-261248b384b3",
+			Name: "liberly",
 		}
 		c.Set(interception.InfoName, userInfo)
 		c.Set(interception.Token, tokenID)
@@ -107,8 +107,7 @@ func (r *Router) RegisterApi(engine *gin.Engine) {
 
 		// 数据资源授权申请
 		dataAuthRouter := router.Group("/data-auth")
-		dataAuthRouter.POST("/apply", r.DataAuthV2.Apply)    // 申请权限
-		dataAuthRouter.GET("/status", r.DataAuthV2.Status)   // 查询申请状态
+		dataAuthRouter.POST("/apply", r.DataAuthV2.Apply) // 申请权限
 	}
 
 }
