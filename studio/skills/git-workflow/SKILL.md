@@ -43,6 +43,12 @@ git diff main...HEAD
 
 缺少目标分支时默认使用 `main`；仓库没有 `main` 时尝试 `master`；仍无法判断时询问用户。
 
+## 分支命名
+
+- 需求或功能开发分支必须使用 `feature/` 前缀。
+- 如果用户未指定分支名，根据 issue、需求关键词或模块名生成简短英文分支名，例如 `feature/121-bkn-user-token-delegation`。
+- 不要为需求或功能开发创建 `codex/` 前缀分支。
+
 ## Commit Message
 
 默认使用 Conventional Commits 风格：
