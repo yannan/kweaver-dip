@@ -7,7 +7,7 @@
   "description": "数据分析总入口编排：先做环境检测与配置检查，再按意图路由到找表（smart-search-tables）、问数（smart-ask-data）、数据洞察（smart-data-insights，含解读/维度/对比/归因子场景）、报告（smart-reporting）子流程；execute-code-sync/json2plot 仅在 smart-data-insights 归因子场景等明确允许处按需触发。",
   "defaults": {
     "x_business_domain": "bd_public",
-    "progress_template": "[{flow}] 进度：已完成第 {step} 步（{name}）；下一步：{next}"
+    "progress_template": "## 📋 任务进度清单（阶段：{flow}）\n- [ ] 待完成 · 步骤{step}（{name}）\n- [ ] 待完成 · 下一步（{next}）"
   },
   "tools": {
     "smart_search_tables": {
