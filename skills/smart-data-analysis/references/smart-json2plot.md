@@ -28,6 +28,7 @@
 2. 按图表类型提取维度字段与数值字段。
 3. 生成统一输出对象：
    - `plot_id`：唯一标识符，例如 `PLOT-BAR-001`
+   - `creator`：固定为 `smart-json2plot`，用于标注数据生成来源
    - `chart_type`：图表类型
    - `sql`：原始 SQL（可追溯）
    - `encoding`：字段映射关系
@@ -72,6 +73,7 @@
 ```json
 {
   "plot_id": "PLOT-BAR-001",
+  "creator": "smart-json2plot",
   "chart_type": "bar",
   "sql": "SELECT ...",
   "encoding": {
