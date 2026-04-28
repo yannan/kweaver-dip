@@ -46,9 +46,10 @@ async def validation_exception_handler(request: Request,
     )
 
 
+# 初始化内置工具箱, 如果失败会进行重试
+init_built_in_agent_and_tool()
+
 if __name__ == '__main__':
     import uvicorn
-    # 初始化内置工具箱, 如果失败会进行重试
-    init_built_in_agent_and_tool()
 
     uvicorn.run(app, host=settings.SERVER_HOST, port=settings.SERVER_PORT)
