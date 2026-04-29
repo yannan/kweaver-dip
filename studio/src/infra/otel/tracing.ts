@@ -97,8 +97,6 @@ export function recordError(span: Span, error: unknown): void {
  * @returns Express middleware.
  */
 export function createChatAgentTracingMiddleware() {
-  ensureGlobalPropagator();
-
   return (
     request: Request,
     response: Response,
@@ -108,6 +106,8 @@ export function createChatAgentTracingMiddleware() {
       next();
       return;
     }
+
+    ensureGlobalPropagator();
 
     const extractedContext = propagation.extract(
       context.active(),

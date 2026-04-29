@@ -31,6 +31,11 @@ export function ensureGlobalPropagator(): void {
     return;
   }
 
+  if (propagation.fields().length > 0) {
+    hasConfiguredPropagator = true;
+    return;
+  }
+
   propagation.setGlobalPropagator(
     new CompositePropagator({
       propagators: [
@@ -142,8 +147,6 @@ export function getActiveTraceparent(): string | undefined {
 }
 
 function readContextCarrier(carrierContext: Context): OpenClawOtelCarrier {
-  ensureGlobalPropagator();
-
   const spanContext = trace.getSpanContext(carrierContext);
 
   if (spanContext === undefined) {

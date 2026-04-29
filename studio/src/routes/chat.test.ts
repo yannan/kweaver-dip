@@ -1,10 +1,12 @@
 import type { NextFunction, Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
+import { trace } from "@opentelemetry/api";
 
 import { HttpError } from "../errors/http-error";
 import {
   appendAttachmentHintsToMessage,
   attachDownstreamAbortHandlers,
+  buildChatAgentSpanAttributes,
   buildFirstTurnSessionLabel,
   buildOpenClawSessionKey,
   createChatRouter,
@@ -25,22 +27,16 @@ import {
   writeEventStreamHeaders,
   pipeEventStream
 } from "./chat";
-import { setSpanAttributes } from "../infra/otel/tracing";
-
 vi.mock("@opentelemetry/api", () => ({
+  diag: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn()
+  },
   trace: {
     getActiveSpan: vi.fn()
   }
 }));
-
-vi.mock("../infra/otel/tracing", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../infra/otel/tracing")>();
-
-  return {
-    ...actual,
-    setSpanAttributes: vi.fn()
-  };
-});
 
 /**
  * Creates a minimal response double with chainable methods.
@@ -460,6 +456,23 @@ describe("createChatRouter", () => {
       ]
     });
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it("builds stable chat span attributes with run id correlation", () => {
+    expect(
+      buildChatAgentSpanAttributes(
+        "demo",
+        "agent:demo:user:user-1:direct:chat-1",
+        "user-1",
+        "run-1"
+      )
+    ).toEqual({
+      "gen_ai.agent.id": "demo",
+      "gen_ai.conversation.id": "agent:demo:user:user-1:direct:chat-1",
+      "gen_ai.agent.run_id": "run-1",
+      "user.id": "user-1",
+      "request.idempotency_key": "run-1"
+    });
   });
 
   it("falls back to getSession when getChatMessages is unavailable", async () => {

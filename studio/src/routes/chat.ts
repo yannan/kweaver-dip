@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { trace } from "@opentelemetry/api";
+import { diag, trace } from "@opentelemetry/api";
 
 import { OpenClawSessionsGatewayAdapter } from "../adapters/openclaw-sessions-adapter";
 import { HttpError } from "../errors/http-error";
@@ -165,13 +165,15 @@ export function createChatRouter(
 
         const activeSpan = trace.getActiveSpan();
         if (activeSpan !== undefined) {
-          setSpanAttributes(activeSpan, {
-            "gen_ai.agent.id": agentId,
-            "gen_ai.conversation.id": sessionKey,
-            "user.id": userId,
-            "request.idempotency_key": idempotencyKey
-          });
+          setSpanAttributes(
+            activeSpan,
+            buildChatAgentSpanAttributes(agentId, sessionKey, userId, idempotencyKey)
+          );
         }
+
+        diag.info(
+          `component=studio-chat event=proxy_start agent_id=${agentId} attachments_count=${requestBody.attachments?.length ?? 0} has_session_label=${sessionLabel !== undefined}`
+        );
 
         const upstreamResponse = await chatAgentClient.createResponseStream(
           {
@@ -185,10 +187,15 @@ export function createChatRouter(
           abortController.signal
         );
 
+        diag.info(
+          `component=studio-chat event=upstream_ready agent_id=${agentId} upstream_status=${upstreamResponse.status}`
+        );
         writeEventStreamHeaders(response, upstreamResponse.status, upstreamResponse.headers);
         await pipeEventStream(upstreamResponse.body, response);
+        diag.info(`component=studio-chat event=proxy_completed agent_id=${agentId}`);
       } catch (error) {
         if (abortController.signal.aborted || response.destroyed) {
+          diag.warn("component=studio-chat event=proxy_aborted");
           return;
         }
 
@@ -202,11 +209,31 @@ export function createChatRouter(
             ? error
             : new HttpError(502, "Failed to proxy digital human chat agent")
         );
+        diag.error(
+          `component=studio-chat event=proxy_failed error_type=${
+            error instanceof HttpError ? `http_${error.statusCode}` : "unexpected_error"
+          }`
+        );
       }
     }
   );
 
   return router;
+}
+
+export function buildChatAgentSpanAttributes(
+  agentId: string,
+  sessionKey: string,
+  userId: string,
+  runId: string
+): Record<string, string> {
+  return {
+    "gen_ai.agent.id": agentId,
+    "gen_ai.conversation.id": sessionKey,
+    "gen_ai.agent.run_id": runId,
+    "user.id": userId,
+    "request.idempotency_key": runId
+  };
 }
 
 /**

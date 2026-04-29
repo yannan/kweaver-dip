@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   attachAbortSignal,
+  buildOpenClawSpanAttributes,
   DefaultOpenClawChatAgentClient,
   createChatSendRequest,
   createFunctionCallItem,
@@ -110,6 +111,28 @@ function completeHandshake(socket: FakeWebSocket, runId = "run-1"): void {
 }
 
 describe("chat agent helpers", () => {
+  it("builds stable OpenClaw span attributes with run id correlation", () => {
+    expect(
+      buildOpenClawSpanAttributes(
+        "agent:agent-1:user:user-1:direct:chat-1",
+        "run-1"
+      )
+    ).toEqual({
+      "gen_ai.agent.run_id": "run-1",
+      "gen_ai.conversation.id": "agent:agent-1:user:user-1:direct:chat-1",
+      "upstream.service": "openclaw"
+    });
+    expect(
+      buildOpenClawSpanAttributes(
+        "agent:agent-1:user:user-1:direct:chat-1",
+        undefined
+      )
+    ).toEqual({
+      "gen_ai.conversation.id": "agent:agent-1:user:user-1:direct:chat-1",
+      "upstream.service": "openclaw"
+    });
+  });
+
   it("creates chat agent request frames", () => {
     expect(
       createSessionsPatchRequest(
@@ -160,11 +183,7 @@ describe("chat agent helpers", () => {
       params: {
         sessionKey: "main",
         message: "hello",
-        idempotencyKey: "run-2",
-        _otel: {
-          traceparent:
-            "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
-        }
+        idempotencyKey: "run-2"
       }
     });
   });

@@ -31,12 +31,9 @@ spec:
           image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["/app/scripts/openclaw-init.sh"]
-          env:
-            - name: USE_EXTERNAL_OPENCLAW
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ .Chart.Name }}-config
-                  key: USE_EXTERNAL_OPENCLAW
+          envFrom:
+            - configMapRef:
+                name: {{ .Chart.Name }}-config
           resources:
             {{- toYaml .Values.resources.init | nindent 12 }}
           volumeMounts:
@@ -52,22 +49,9 @@ spec:
             - containerPort: {{ .Values.service.port }}
               name: studio-http
               protocol: TCP
-          env:
-            - name: NODE_ENV
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ .Chart.Name }}-config
-                  key: NODE_ENV
-            - name: KWEAVER_HYDRA_ADMIN_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ .Chart.Name }}-config
-                  key: KWEAVER_HYDRA_ADMIN_URL
-            - name: USE_EXTERNAL_OPENCLAW
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ .Chart.Name }}-config
-                  key: USE_EXTERNAL_OPENCLAW
+          envFrom:
+            - configMapRef:
+                name: {{ .Chart.Name }}-config
           resources:
             {{- toYaml .Values.resources.studio | nindent 12 }}
           volumeMounts:

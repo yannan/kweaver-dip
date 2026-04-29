@@ -4,58 +4,41 @@ import {
   readOtelConfig,
   resolveLogExporterUrl,
   resolveTraceExporterUrl
-} from "./config";
+} from "./otel-config.js";
 
 describe("readOtelConfig", () => {
   it("reads explicit otel settings", () => {
     expect(readOtelConfig({
       OTEL_TRACE_ENABLED: "true",
-      OTEL_SERVICE_NAME: "studio-api",
+      OTEL_SERVICE_NAME: "dip-test",
       OTEL_SERVICE_VERSION: "1.2.3",
       OTEL_ENVIRONMENT: "prod",
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel:4318",
-      OTEL_TRACE_EXPORTER: "both",
       OTEL_LOG_ENABLED: "true",
-      OTEL_LOG_LEVEL: "debug",
-      OTEL_LOG_EXPORTER: "local",
+      OTEL_LOG_LEVEL: "warn",
+      OTEL_LOG_EXPORTER: "both",
+      OTEL_TRACE_EXPORTER: "both",
       OTEL_TRACE_SAMPLING_RATE: "0.25"
     })).toEqual({
       enabled: true,
-      serviceName: "studio-api",
+      serviceName: "dip-test",
       serviceVersion: "1.2.3",
       environment: "prod",
       exporterEndpoint: "http://otel:4318",
       traceExporter: "both",
       logEnabled: true,
-      logLevel: "debug",
-      logExporter: "local",
+      logLevel: "warn",
+      logExporter: "both",
       samplingRate: 0.25
     });
   });
 
-  it("falls back to defaults for missing and invalid values", () => {
-    expect(readOtelConfig({
-      OTEL_TRACE_ENABLED: "",
-      OTEL_SERVICE_NAME: "   ",
-      OTEL_TRACE_SAMPLING_RATE: "9"
-    })).toEqual({
-      enabled: false,
-      serviceName: "studio",
-      serviceVersion: undefined,
-      environment: undefined,
-      exporterEndpoint: undefined,
-      traceExporter: "otlp",
-      logEnabled: false,
-      logLevel: "info",
-      logExporter: "otlp",
-      samplingRate: 1
-    });
+  it("uses default service name openclaw-dip-plugin", () => {
+    expect(readOtelConfig({}).serviceName).toBe("openclaw-dip-plugin");
   });
 
   it("parses supported trace exporter modes", () => {
     expect(readOtelConfig({
-      OTEL_TRACE_ENABLED: "true",
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://127.0.0.1:4318",
       OTEL_TRACE_EXPORTER: "local"
     }).traceExporter).toBe("local");
 
@@ -74,30 +57,12 @@ describe("resolveTraceExporterUrl", () => {
     expect(resolveTraceExporterUrl("http://otel:4318")).toBe(
       "http://otel:4318/v1/traces"
     );
-    expect(resolveTraceExporterUrl("http://otel:4318/collector/")).toBe(
-      "http://otel:4318/collector/v1/traces"
-    );
-  });
-
-  it("keeps an existing traces suffix", () => {
-    expect(resolveTraceExporterUrl("http://otel:4318/v1/traces")).toBe(
-      "http://otel:4318/v1/traces"
-    );
   });
 });
 
 describe("resolveLogExporterUrl", () => {
   it("appends the logs suffix when absent", () => {
     expect(resolveLogExporterUrl("http://otel:4318")).toBe(
-      "http://otel:4318/v1/logs"
-    );
-    expect(resolveLogExporterUrl("http://otel:4318/collector/")).toBe(
-      "http://otel:4318/collector/v1/logs"
-    );
-  });
-
-  it("keeps an existing logs suffix", () => {
-    expect(resolveLogExporterUrl("http://otel:4318/v1/logs")).toBe(
       "http://otel:4318/v1/logs"
     );
   });

@@ -1,5 +1,5 @@
 /**
- * Normalized OpenTelemetry runtime configuration for Studio.
+ * Normalized OpenTelemetry runtime configuration for the DIP OpenClaw plugin.
  */
 export interface OtelConfig {
   enabled: boolean;
@@ -14,10 +14,10 @@ export interface OtelConfig {
   samplingRate: number;
 }
 
-const DEFAULT_SERVICE_NAME = "studio";
+const DEFAULT_SERVICE_NAME = "openclaw-dip-plugin";
 
 /**
- * Reads Studio OpenTelemetry environment variables.
+ * Reads OpenTelemetry environment variables used by the DIP plugin and Studio.
  *
  * Recognized keys include `OTEL_TRACE_ENABLED`, `OTEL_SERVICE_NAME`,
  * `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_TRACE_EXPORTER`,

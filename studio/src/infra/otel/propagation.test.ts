@@ -1,5 +1,10 @@
-import { context, trace } from "@opentelemetry/api";
+import { context, propagation, trace } from "@opentelemetry/api";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  CompositePropagator,
+  W3CBaggagePropagator,
+  W3CTraceContextPropagator
+} from "@opentelemetry/core";
 
 import {
   ensureGlobalPropagator,
@@ -21,7 +26,7 @@ describe("otel propagation helpers", () => {
   );
 
   afterEach(() => {
-    // Reset is handled by helper-local lazy initialization.
+    propagation.disable();
   });
 
   it("injects trace context into HTTP headers", () => {
@@ -93,5 +98,18 @@ describe("otel propagation helpers", () => {
 
     expect(trace.getSpanContext(extracted)).toBeUndefined();
     expect(getActiveTraceparent()).toBeUndefined();
+  });
+
+  it("does not re-register the global propagator when one already exists", () => {
+    propagation.setGlobalPropagator(
+      new CompositePropagator({
+        propagators: [
+          new W3CTraceContextPropagator(),
+          new W3CBaggagePropagator()
+        ]
+      })
+    );
+
+    expect(() => ensureGlobalPropagator()).not.toThrow();
   });
 });

@@ -2,6 +2,7 @@ import {
   randomUUID
 } from "node:crypto";
 import {
+  diag,
   SpanStatusCode,
   context,
   trace
@@ -24,7 +25,6 @@ import {
   type OpenClawWebSocketFactory
 } from "./openclaw-gateway-client";
 import {
-  injectContextToOpenClawPayload,
   type OpenClawOtelCarrier
 } from "./otel/propagation";
 import {
@@ -423,6 +423,9 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
   ): Promise<OpenClawChatAgentStreamResult> {
     const connectionOptions = this.getConnectionOptions();
     const parentContext = context.active();
+    diag.debug(
+      `component=studio-chat-client event=create_stream session_key=${request.sessionKey} agent_id=${agentId} attachments_count=${request.attachments?.length ?? 0}`
+    );
 
     return new Promise<OpenClawChatAgentStreamResult>((resolve, reject) => {
       const socket = this.createWebSocket(connectionOptions.url);
@@ -447,9 +450,10 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
       const connectSpan = startInternalSpan(
         "studio.openclaw.connect",
         {
-          attributes: {
-            "upstream.service": "openclaw"
-          }
+          attributes: buildOpenClawSpanAttributes(
+            request.sessionKey,
+            request.idempotencyKey
+          )
         },
         parentContext
       );
@@ -458,10 +462,10 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
       const streamSpan = startInternalSpan(
         "studio.openclaw.stream",
         {
-          attributes: {
-            "gen_ai.conversation.id": request.sessionKey,
-            "upstream.service": "openclaw"
-          }
+          attributes: buildOpenClawSpanAttributes(
+            request.sessionKey,
+            request.idempotencyKey
+          )
         },
         parentContext
       );
@@ -483,6 +487,7 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
 
       const cleanupAbortListener = attachAbortSignal(signal, () => {
         if (!terminal) {
+          diag.warn("component=studio-chat-client event=downstream_abort");
           streamSpan.setStatus({
             code: SpanStatusCode.ERROR,
             message: "request_aborted"
@@ -521,6 +526,7 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
         controller?.close();
         streamSpan.end();
         socket.close();
+        diag.info("component=studio-chat-client event=stream_completed");
       };
 
       const failBeforeResolve = (error: HttpError): void => {
@@ -533,6 +539,9 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
         recordError(streamSpan, error);
         streamSpan.end();
         socket.close();
+        diag.error(
+          `component=studio-chat-client event=stream_failed_before_resolve error_message="${error.message}"`
+        );
         reject(error);
       };
 
@@ -568,6 +577,9 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
           message: redactedMessage
         });
 
+        diag.error(
+          `component=studio-chat-client event=stream_failed_after_resolve error_message="${redactedMessage}"`
+        );
         completeStream();
       };
 
@@ -730,10 +742,10 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
             sessionPatchSpan = startInternalSpan(
               "studio.openclaw.sessions_patch",
               {
-                attributes: {
-                  "gen_ai.conversation.id": request.sessionKey,
-                  "upstream.service": "openclaw"
-                }
+                attributes: buildOpenClawSpanAttributes(
+                  request.sessionKey,
+                  request.idempotencyKey
+                )
               },
               parentContext
             );
@@ -767,24 +779,21 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
             chatSendSpan = startInternalSpan(
               "studio.openclaw.chat_send",
               {
-                attributes: {
-                  "gen_ai.conversation.id": request.sessionKey,
-                  "upstream.service": "openclaw"
-                }
+                attributes: buildOpenClawSpanAttributes(
+                  request.sessionKey,
+                  request.idempotencyKey
+                )
               },
               parentContext
             );
             socket.send(JSON.stringify(createChatSendRequest(
               chatRequestId,
-              injectContextToOpenClawPayload(
-                {
-                  sessionKey: request.sessionKey,
-                  message: request.message,
-                  idempotencyKey: request.idempotencyKey,
-                  attachments: request.attachments
-                },
-                trace.setSpan(parentContext, streamSpan)
-              )
+              {
+                sessionKey: request.sessionKey,
+                message: request.message,
+                idempotencyKey: request.idempotencyKey,
+                attachments: request.attachments
+              }
             )));
             return;
           }
@@ -805,6 +814,9 @@ export class DefaultOpenClawChatAgentClient implements OpenClawChatAgentClient {
             setSpanAttributes(streamSpan, {
               "gen_ai.agent.run_id": ackPayload.runId
             });
+            diag.info(
+              `component=studio-chat-client event=chat_send_ack run_id=${ackPayload.runId}`
+            );
             resolveStream();
             return;
           }
@@ -1112,7 +1124,25 @@ export function createChatSendRequest(
     type: "req",
     id: requestId,
     method: "chat.send",
-    params: request
+    params: {
+      sessionKey: request.sessionKey,
+      message: request.message,
+      idempotencyKey: request.idempotencyKey,
+      ...(request.attachments === undefined
+        ? {}
+        : { attachments: request.attachments })
+    }
+  };
+}
+
+export function buildOpenClawSpanAttributes(
+  sessionKey: string,
+  runId: string | undefined
+): Record<string, string> {
+  return {
+    ...(runId === undefined ? {} : { "gen_ai.agent.run_id": runId }),
+    "gen_ai.conversation.id": sessionKey,
+    "upstream.service": "openclaw"
   };
 }
 
