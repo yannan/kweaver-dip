@@ -257,7 +257,7 @@ class TodoListTool(LLMTool):
             )
             row: Dict[str, Any] = {
                 "id": tid,
-                "title": title,
+                "title": "task_{0}:{1}".format(tid, title),
                 "task": text,
                 "blockedBy": blocked_by,
                 "status": st,
