@@ -28,7 +28,8 @@ from data_migrations.init.tools.built_in_tools import manage_built_in_tools
 
 
 
-# 解析命令行参数
+# 解析命令行参数（仅当以 `python .../manage_built_in_agent_and_tool.py` 运行时解析；
+# 被 main / uvicorn 导入时不能解析全局 sys.argv，否则会与 uvicorn CLI 冲突。）
 def parse_args():
     parser = argparse.ArgumentParser(description="管理内置agent和工具")
     parser.add_argument(
@@ -37,24 +38,20 @@ def parse_args():
     return parser.parse_args()
 
 
-args = parse_args()
-UPDATE_MODE = args.update
-
-
 # 现在的处理逻辑：
 # 1.服务启动时先进行内置工具箱处理，处理成功再启动http server
 # 2.如果失败会进行重试（重试时间间隔：1、3、5、10、20）
 # 3.如果都重试失败，退出程序
-def init_built_in_agent_and_tool():
+def init_built_in_agent_and_tool(update: bool = False):
     """执行管理任务，并在失败时按照退避策略重试"""
     retry_intervals = [1, 3, 5, 10, 20]  # 秒
     for idx, interval in enumerate[int](retry_intervals):
         try:
             print(
-                f"运行模式: {'更新' if UPDATE_MODE else '初始化'}（第 {idx + 1} 次尝试）"
+                f"运行模式: {'更新' if update else '初始化'}（第 {idx + 1} 次尝试）"
             )
             # 1. 插入内置工具
-            manage_built_in_tools(UPDATE_MODE)
+            manage_built_in_tools(update)
 
             print("操作完成！")
             return
@@ -71,4 +68,5 @@ def init_built_in_agent_and_tool():
 
 
 if __name__ == "__main__":
-    init_built_in_agent_and_tool()
+    _cli_args = parse_args()
+    init_built_in_agent_and_tool(update=_cli_args.update)
