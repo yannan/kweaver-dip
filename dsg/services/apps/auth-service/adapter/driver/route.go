@@ -64,8 +64,9 @@ func LocalToken() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenID := c.GetHeader("Authorization")
 		userInfo := &middleware.User{
-			ID:   "eb4dae48-3e12-11f1-b0e8-261248b384b3",
-			Name: "liberly",
+			ID:       "eb4dae48-3e12-11f1-b0e8-261248b384b3",
+			Name:     "liberly",
+			UserType: 0,
 		}
 		c.Set(interception.InfoName, userInfo)
 		c.Set(interception.Token, tokenID)
