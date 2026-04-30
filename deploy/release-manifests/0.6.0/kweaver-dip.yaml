@@ -55,7 +55,7 @@ releases:
     version: 0.6.0-main.20260430.3
   dip-frontend:
     chart: dip-frontend
-    version: 0.5.0-main.5ba829f
+    version: 0.6.0-main.126838e
     values:
       runtimeEnv:
         publicEnabledModules: "store,studio"  # 允许值：store,studio（多个用英文逗号分隔）
@@ -112,7 +112,7 @@ releases:
     version: 0.5.0
   dip-studio:
     chart: dip-studio
-    version: 0.6.0-main.c2fe83c6
+    version: 0.6.0-main.e9354b40
     values:
       studio:
         envFileHostPath: /root/.env         # 环境变量配置主机路径，例如：/root/.env。文件不存在时会自动创建。
