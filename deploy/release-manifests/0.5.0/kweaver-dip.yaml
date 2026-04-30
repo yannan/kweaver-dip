@@ -15,7 +15,7 @@ dependencies:
 releases:
   dip-data-migrator:
     chart: dip-data-migrator
-    version: 0.5.0-main.20260420.1.2f7545f
+    version: 0.5.0-main.20260423.1.2f7545f
     stage: pre
   business-system-service:
     chart: business-system-service
@@ -112,7 +112,7 @@ releases:
     version: 0.5.0
   dip-studio:
     chart: dip-studio
-    version: 0.5.0-main.725353af
+    version: 0.5.0-main.1bc3bb01
     values:
       studio:
         envFileHostPath: /root/.env         # 环境变量配置主机路径，例如：/root/.env。文件不存在时会自动创建。

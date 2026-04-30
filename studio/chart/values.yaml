@@ -14,7 +14,7 @@ replicaCount: 1
 image:
   registry: swr.cn-east-3.myhuaweicloud.com/kweaver-ai
   repository: dip/dip-studio
-  tag: "0.5.0"
+  tag: "0.5.0-main"
   pullPolicy: IfNotPresent
 
 service:
@@ -33,6 +33,10 @@ ingress:
   annotations:
     nginx.ingress.kubernetes.io/enable-cors: "true"
     nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Authorization, Content-Type, Accept, Origin, X-Requested-With, X-Openclaw-Session-Key"
+    nginx.ingress.kubernetes.io/cors-expose-headers: "Content-Disposition, Content-Type"
+    nginx.ingress.kubernetes.io/cors-max-age: "86400"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
@@ -42,7 +46,7 @@ ingress:
 studio:
   nodeEnv: production
   envFileHostPath: /root/.env
-  openClawHostPath: /root/.openclaw/
+  OpenClawHostPath: /root/.openclaw/
   KWeaverHydraAdminURL: http://hydra-admin:4445
   useExternalOpenClaw: false
 

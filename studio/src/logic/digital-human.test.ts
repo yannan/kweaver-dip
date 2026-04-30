@@ -711,7 +711,8 @@ describe("DefaultDigitalHumanLogic lifecycle (filesystem + adapter)", () => {
     expect(removeCronJob).toHaveBeenCalledWith({ id: "plan-3" });
   });
 
-  it("deleteDigitalHuman scans all cron pages before removing matching plans", async () => {
+  it("deleteDigitalHuman defaults to keeping workspace files and scans all cron pages", async () => {
+    const deleteAgent = vi.fn().mockResolvedValue({ ok: true });
     const listCronJobs = vi
       .fn()
       .mockResolvedValueOnce({
@@ -759,7 +760,7 @@ describe("DefaultDigitalHumanLogic lifecycle (filesystem + adapter)", () => {
       openClawAgentsAdapter: {
         listAgents: vi.fn(),
         createAgent: vi.fn(),
-        deleteAgent: vi.fn().mockResolvedValue({ ok: true }),
+        deleteAgent,
         getAgentFile: vi.fn(),
         setAgentFile: vi.fn(),
         listAgentFiles: vi.fn(),
@@ -777,6 +778,10 @@ describe("DefaultDigitalHumanLogic lifecycle (filesystem + adapter)", () => {
 
     expect(listCronJobs).toHaveBeenNthCalledWith(1, expect.objectContaining({ offset: 0 }));
     expect(listCronJobs).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 200 }));
+    expect(deleteAgent).toHaveBeenCalledWith({
+      agentId: "agent-1",
+      deleteFiles: false
+    });
     expect(removeCronJob).toHaveBeenCalledTimes(2);
   });
 
@@ -885,9 +890,17 @@ describe("DefaultDigitalHumanLogic lifecycle (filesystem + adapter)", () => {
       })
     );
     expect(updateAgentSkills).toHaveBeenCalledWith(result.id, [
+      "archive-protocol",
+      "schedule-plan",
+      "kweaver-core",
       "sk1"
     ]);
-    expect(result.skills).toEqual(["sk1"]);
+    expect(result.skills).toEqual([
+      "archive-protocol",
+      "schedule-plan",
+      "kweaver-core",
+      "sk1"
+    ]);
   });
 
   it("createDigitalHuman uses the provided id instead of generating a uuid", async () => {
@@ -932,7 +945,7 @@ describe("DefaultDigitalHumanLogic lifecycle (filesystem + adapter)", () => {
     expect(result.id).toBe("__bkn_creator__");
   });
 
-  it("createDigitalHuman leaves skills empty when request omits skills", async () => {
+  it("createDigitalHuman binds default built-in skills when request omits skills", async () => {
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
       "dddddddd-dddd-dddd-dddd-dddddddddddd"
     );
@@ -959,8 +972,16 @@ describe("DefaultDigitalHumanLogic lifecycle (filesystem + adapter)", () => {
 
     const result = await logic.createDigitalHuman({ name: "NoSkills" });
 
-    expect(updateAgentSkills).toHaveBeenCalledWith(result.id, []);
-    expect(result.skills).toEqual([]);
+    expect(updateAgentSkills).toHaveBeenCalledWith(result.id, [
+      "archive-protocol",
+      "schedule-plan",
+      "kweaver-core"
+    ]);
+    expect(result.skills).toEqual([
+      "archive-protocol",
+      "schedule-plan",
+      "kweaver-core"
+    ]);
   });
 
   it("createDigitalHuman deduplicates repeated request skill names", async () => {
@@ -990,10 +1011,17 @@ describe("DefaultDigitalHumanLogic lifecycle (filesystem + adapter)", () => {
     });
 
     expect(updateAgentSkills).toHaveBeenCalledWith(result.id, [
+      "archive-protocol",
+      "schedule-plan",
+      "kweaver-core",
       "other",
-      "archive-protocol"
     ]);
-    expect(result.skills).toEqual(["other", "archive-protocol"]);
+    expect(result.skills).toEqual([
+      "archive-protocol",
+      "schedule-plan",
+      "kweaver-core",
+      "other"
+    ]);
   });
 
   it("getDigitalHuman returns the full bound skill list in the response", async () => {
