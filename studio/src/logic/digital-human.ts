@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -17,6 +17,7 @@ import type {
   UpdateDigitalHumanRequest,
   UpdateDigitalHumanResult
 } from "../types/digital-human";
+import type { OpenClawConfigGetResult } from "../types/openclaw";
 import type { OpenClawCronJob } from "../types/plan";
 import { normalizeCreateDigitalHumanSkills } from "../utils/skills";
 import type { AgentSkillsLogic } from "./agent-skills";
@@ -25,7 +26,8 @@ import {
   mergeFilesToTemplate,
   mergeTemplatePatch,
   renderIdentityMarkdown,
-  renderSoulMarkdown
+  renderSoulMarkdown,
+  renderToolsMarkdown
 } from "./digital-human-template";
 
 const HIDDEN_DIGITAL_HUMAN_IDS = new Set(["main", "__internal_skill_agent__"]);
@@ -199,8 +201,7 @@ export class DefaultDigitalHumanLogic implements DigitalHumanLogic {
    * 2. Create the agent in OpenClaw (`agents.create`)
    * 3. Update IDENTITY.md and SOUL.md via `agents.files.list` then `agents.files.set`
    * 4. Configure skills via {@link AgentSkillsLogic.updateAgentSkills}
-   * 5. (optional) Bind channel via `config.patch` WS RPC, or fall back to writing
-   *    `openclaw.json` when the gateway rejects the patch (one agent ↔ one binding row).
+   * 5. (optional) Bind channel via `config.get` + `config.set` WS RPCs.
    *
    * @param request The creation request payload.
    * @returns The created digital human summary.
@@ -225,8 +226,11 @@ export class DefaultDigitalHumanLogic implements DigitalHumanLogic {
 
     if (request.channel) {
       try {
-        await this.bindChannelForAgent(id, request.channel);
+        await this.bindChannelForAgent(id, request.channel, true);
       } catch (err) {
+        if (err instanceof HttpError) {
+          throw err;
+        }
         console.error("[digital-human] channel binding failed (non-fatal):", err);
       }
     }
@@ -325,8 +329,11 @@ export class DefaultDigitalHumanLogic implements DigitalHumanLogic {
 
     if (patch.channel) {
       try {
-        await this.bindChannelForAgent(id, patch.channel);
+        await this.bindChannelForAgent(id, patch.channel, false);
       } catch (err) {
+        if (err instanceof HttpError) {
+          throw err;
+        }
         console.error("[digital-human] channel binding failed (non-fatal):", err);
       }
     }
@@ -347,8 +354,8 @@ export class DefaultDigitalHumanLogic implements DigitalHumanLogic {
   }
 
   /**
-   * Updates IDENTITY.md and SOUL.md through OpenClaw file RPCs: `agents.files.list`
-   * then parallel `agents.files.set` calls, per the digital human design.
+   * Updates IDENTITY.md, SOUL.md, and TOOLS.md through OpenClaw file RPCs:
+   * `agents.files.list` then parallel `agents.files.set` calls.
    *
    * @param agentId The OpenClaw agent id.
    * @param template The template to render into markdown files.
@@ -360,6 +367,7 @@ export class DefaultDigitalHumanLogic implements DigitalHumanLogic {
     await this.openClawAgentsAdapter.listAgentFiles({ agentId });
     const identityMd = renderIdentityMarkdown(template);
     const soulMd = renderSoulMarkdown(template);
+    const toolsMd = renderToolsMarkdown();
     await Promise.all([
       this.openClawAgentsAdapter.setAgentFile({
         agentId,
@@ -370,6 +378,11 @@ export class DefaultDigitalHumanLogic implements DigitalHumanLogic {
         agentId,
         name: "SOUL.md",
         content: soulMd
+      }),
+      this.openClawAgentsAdapter.setAgentFile({
+        agentId,
+        name: "TOOLS.md",
+        content: toolsMd
       })
     ]);
   }
@@ -380,45 +393,29 @@ export class DefaultDigitalHumanLogic implements DigitalHumanLogic {
    * `match.accountId` so multiple apps can coexist; each account may only be bound to one
    * agent (other agents' claims on that account are removed). For Feishu, each account
    * also sets `dmPolicy: "open"` and `allowFrom: ["*"]` so DMs reach the agent without
-   * OpenClaw pairing (`openclaw pairing approve`). Tries `config.patch` first; falls back
-   * to writing `openclaw.json` if the gateway rejects the patch.
+   * OpenClaw pairing (`openclaw pairing approve`). Persists the complete merged config
+   * through `config.set` instead of patching, because `config.patch` schedules a gateway
+   * restart while route bindings can be updated without restarting channels.
    *
    * @param agentId The OpenClaw agent id.
    * @param channel The channel configuration.
+   * @param rejectExistingAppId Whether to reject AppIDs already configured for another agent.
    */
   private async bindChannelForAgent(
     agentId: string,
-    channel: ChannelConfig
+    channel: ChannelConfig,
+    rejectExistingAppId: boolean
   ): Promise<void> {
-    const configPath = resolveOpenClawConfigPath();
-    const merged = await loadOpenClawConfigForMerge(configPath);
-    applyAgentChannelBinding(merged, agentId, channel);
-
-    try {
-      const { hash } = await this.openClawAgentsAdapter.getConfig();
-      const channelKey = resolveOpenClawChannelKey(channel);
-      const channelPayload = getChannelPatchPayload(merged, channelKey);
-      const patchObject: Record<string, unknown> = {
-        channels: {
-          [channelKey]: channelPayload
-        },
-        bindings: merged.bindings ?? []
-      };
-      await this.openClawAgentsAdapter.patchConfig({
-        raw: JSON.stringify(patchObject),
-        baseHash: hash
-      });
-    } catch (err) {
-      console.warn(
-        "[digital-human] config.patch failed; writing openclaw.json directly:",
-        err
-      );
-      await writeFile(
-        configPath,
-        JSON.stringify(merged, null, 2) + "\n",
-        "utf-8"
-      );
+    const configSnapshot = await this.openClawAgentsAdapter.getConfig();
+    const merged = loadOpenClawConfigSnapshotForMerge(configSnapshot);
+    if (rejectExistingAppId) {
+      assertChannelAppIdIsAvailable(merged, agentId, channel);
     }
+    applyAgentChannelBinding(merged, agentId, channel);
+    await this.openClawAgentsAdapter.setConfig({
+      raw: JSON.stringify(merged),
+      baseHash: configSnapshot.hash
+    });
   }
 
   /**
@@ -493,7 +490,7 @@ function toNotFoundIfAgentMissing(error: unknown, id: string): HttpError {
  *
  * @returns The absolute path to the OpenClaw configuration file.
  */
-function resolveOpenClawConfigPath(): string {
+export function resolveOpenClawConfigPath(): string {
   return join(homedir(), ".openclaw", "openclaw.json");
 }
 
@@ -511,19 +508,39 @@ function normalizeChannelForResponse(channel: ChannelConfig): ChannelConfig {
 }
 
 /**
- * Loads the local OpenClaw JSON object for merging (unredacted), or `{}` if missing.
+ * Loads the parsed OpenClaw config object from the `config.get` response.
  *
- * @param configPath Absolute path to `openclaw.json`.
+ * @param snapshot The `config.get` result.
+ * @throws HttpError when the gateway does not provide a parsed config object.
  */
-async function loadOpenClawConfigForMerge(
-  configPath: string
-): Promise<Record<string, unknown>> {
-  try {
-    const raw = await readFile(configPath, "utf-8");
-    return JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return {};
+function loadOpenClawConfigSnapshotForMerge(
+  snapshot: OpenClawConfigGetResult
+): Record<string, unknown> {
+  const fromSnapshot = readOpenClawParsedConfigSnapshot(snapshot);
+  if (fromSnapshot !== undefined) {
+    return fromSnapshot;
   }
+
+  throw new HttpError(
+    502,
+    "OpenClaw config.get did not return a parsed config object; refusing to call config.set"
+  );
+}
+
+/**
+ * Extracts the parsed config object from `config.get.config`.
+ *
+ * @param snapshot The `config.get` result.
+ * @returns Parsed config object when available and object-shaped.
+ */
+function readOpenClawParsedConfigSnapshot(
+  snapshot: OpenClawConfigGetResult
+): Record<string, unknown> | undefined {
+  if (typeof snapshot.config === "object" && snapshot.config !== null) {
+    return snapshot.config as Record<string, unknown>;
+  }
+
+  return undefined;
 }
 
 const OPENCLAW_DEFAULT_ACCOUNT_ID = "default";
@@ -578,6 +595,106 @@ function bindingAccountKeyForChannel(
     return OPENCLAW_DEFAULT_ACCOUNT_ID;
   }
   return normalizeOpenClawAccountIdFromAppId(raw);
+}
+
+/**
+ * Rejects channel credentials whose AppID already exists in OpenClaw config.
+ *
+ * @param currentConfig Parsed OpenClaw config root.
+ * @param agentId Target agent id.
+ * @param channel Channel credentials being configured.
+ * @throws HttpError when another configured account has the same AppID.
+ */
+function assertChannelAppIdIsAvailable(
+  currentConfig: Record<string, unknown>,
+  agentId: string,
+  channel: ChannelConfig
+): void {
+  const channelKey = resolveOpenClawChannelKey(channel);
+  const requestedAppId = channel.appId.trim();
+  if (requestedAppId.length === 0) {
+    return;
+  }
+
+  const channels = currentConfig.channels;
+  if (typeof channels !== "object" || channels === null) {
+    return;
+  }
+
+  const block = (channels as Record<string, unknown>)[channelKey];
+  if (typeof block !== "object" || block === null) {
+    return;
+  }
+
+  const existingAgentId = findAgentIdByChannelAppId(
+    currentConfig,
+    channelKey,
+    block as Record<string, unknown>,
+    requestedAppId
+  );
+  if (existingAgentId !== undefined && existingAgentId !== agentId) {
+    throw new HttpError(
+      400,
+      `channel.appId has already been configured for ${channelKey}`
+    );
+  }
+}
+
+function findAgentIdByChannelAppId(
+  currentConfig: Record<string, unknown>,
+  channelKey: "feishu" | "dingtalk",
+  channelBlock: Record<string, unknown>,
+  appId: string
+): string | undefined {
+  const accountIds = new Set<string>();
+  const accounts =
+    typeof channelBlock.accounts === "object" && channelBlock.accounts !== null
+      ? (channelBlock.accounts as Record<string, unknown>)
+      : undefined;
+
+  if (accounts !== undefined) {
+    for (const [accountId, account] of Object.entries(accounts)) {
+      if (typeof account !== "object" || account === null) {
+        continue;
+      }
+      const existingAppId = (account as Record<string, unknown>).appId;
+      if (typeof existingAppId === "string" && existingAppId.trim() === appId) {
+        accountIds.add(normalizeOpenClawAccountIdFromAppId(accountId));
+      }
+    }
+  }
+
+  const legacyAppId = channelBlock.appId;
+  if (typeof legacyAppId === "string" && legacyAppId.trim() === appId) {
+    accountIds.add(OPENCLAW_DEFAULT_ACCOUNT_ID);
+  }
+
+  if (accountIds.size === 0) {
+    return undefined;
+  }
+
+  const bindings = Array.isArray(currentConfig.bindings)
+    ? currentConfig.bindings
+    : [];
+  for (const entry of bindings) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const binding = entry as {
+      agentId?: unknown;
+      match?: { channel?: string; accountId?: string };
+    };
+    const accountKey = bindingAccountKeyForChannel(binding.match, channelKey);
+    if (
+      typeof binding.agentId === "string" &&
+      accountKey !== null &&
+      accountIds.has(accountKey)
+    ) {
+      return binding.agentId;
+    }
+  }
+
+  return "";
 }
 
 /**
@@ -670,20 +787,6 @@ function applyAgentChannelBinding(
       accounts: prevAccounts
     }
   };
-}
-
-function getChannelPatchPayload(
-  merged: Record<string, unknown>,
-  channelKey: "feishu" | "dingtalk"
-): unknown {
-  const ch = merged.channels;
-  if (typeof ch === "object" && ch !== null) {
-    const block = (ch as Record<string, unknown>)[channelKey];
-    if (block !== undefined) {
-      return block;
-    }
-  }
-  return {};
 }
 
 /**

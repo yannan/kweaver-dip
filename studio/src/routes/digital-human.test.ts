@@ -223,6 +223,15 @@ describe("createDigitalHumanRouter", () => {
     expect(findHandler(router, "get", listPath)).toBeDefined();
   });
 
+  it("does not register digital human channel-user routes", async () => {
+    const { createDigitalHumanRouter } = await importRouterWithLogicMock({});
+    const router = createDigitalHumanRouter() as Router;
+    const path = "/api/dip-studio/v1/digital-human/:id/channel-users";
+
+    expect(findHandler(router, "get", path)).toBeUndefined();
+    expect(findHandler(router, "put", path)).toBeUndefined();
+  });
+
   it("returns the digital human list on success", async () => {
     const { createDigitalHumanRouter } = await importRouterWithLogicMock({
       listDigitalHumans: async () => [

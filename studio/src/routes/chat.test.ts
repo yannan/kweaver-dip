@@ -5,6 +5,7 @@ import { HttpError } from "../errors/http-error";
 import {
   appendAttachmentHintsToMessage,
   attachDownstreamAbortHandlers,
+  buildSessionLabelPrefix,
   buildFirstTurnSessionLabel,
   buildOpenClawSessionKey,
   createChatRouter,
@@ -21,6 +22,7 @@ import {
   readOptionalHeaderValue,
   readRequiredSessionKeyHeader,
   readRequiredUserIdHeader,
+  replaceChannelUserMentionsWithDisplayNames,
   resolveChatAgentSessionLabel,
   writeEventStreamHeaders
 } from "./chat";
@@ -273,6 +275,36 @@ describe("chat agent session labels", () => {
     expect(buildFirstTurnSessionLabel("  今天天气怎么样？ \n", "3f9c2b6a-xxxx")).toBe(
       "今天天气怎么样？_3f9c2b6a"
     );
+  });
+
+  it("uses whole sentences when truncating the first-turn label", () => {
+    expect(
+      buildFirstTurnSessionLabel(
+        "这是第一句，包含一些额外说明。这是第二句，继续补充上下文。这是第三句，用来拉长首轮消息。这是第四句，这一句不会进入 label，因为总长度会超出上游限制。",
+        "3f9c2b6a-xxxx"
+      )
+    ).toBe("这是第一句，包含一些额外说明。这是第二句，继续补充上下文。这是第三句，用来拉长首轮消息。_3f9c2b6a");
+  });
+
+  it("falls back to truncating the first sentence when it exceeds the limit", () => {
+    expect(buildSessionLabelPrefix("a".repeat(80))).toBe("a".repeat(55));
+  });
+
+  it("uses channel-user mention display names before applying label length rules", () => {
+    expect(
+      buildFirstTurnSessionLabel(
+        "请帮 @{channel:feishu:user:张三:u-1} 和 @{channel:dingtalk:user:李四:u-2} 总结进度",
+        "3f9c2b6a-xxxx"
+      )
+    ).toBe("请帮 张三 和 李四 总结进度_3f9c2b6a");
+  });
+
+  it("extracts display names from each channel-user mention token", () => {
+    expect(
+      replaceChannelUserMentionsWithDisplayNames(
+        "提醒 @{channel:feishu:user:Alice:ou_1}、@{channel:dingtalk:user:Bob:dt_2} 跟进"
+      )
+    ).toBe("提醒 Alice、Bob 跟进");
   });
 
   it("treats a missing session as the first turn", async () => {

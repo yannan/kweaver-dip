@@ -459,6 +459,68 @@ DIP 数字员工 Web 界面
 
 返回值为创建或更新后的数字员工数组，元素结构与 `POST /api/dip-studio/v1/digital-human` 响应一致。
 
+#### 获取通道用户列表
+
+`GET /api/dip-studio/v1/channel-users`
+
+查询参数：
+
+| 参数 | 类型 | 说明 |
+| -- | -- | -- |
+| type | `"feishu" \| "dingding"` | 可选；按通道类型过滤 |
+| displayName | string | 可选；按显示名做不区分大小写的部分匹配过滤 |
+| start | integer | 可选；分页起始偏移，最小值 `0` |
+| limit | integer | 可选；分页大小，最小值 `1` |
+
+响应：`200 application/json`
+
+| 参数 | 类型 | 说明 |
+| -- | -- | -- |
+| items | ChannelUserListItem[] | 当前页通道用户列表 |
+| total | integer | 过滤后的总记录数 |
+| start | integer | 当前分页起始偏移 |
+| limit | integer | 当前分页大小 |
+
+`ChannelUserListItem` 结构：
+
+| 参数 | 类型 | 说明 |
+| -- | -- | -- |
+| displayName | string | 通道用户显示名 |
+| channel | ChannelUserChannel | 通道信息 |
+
+`ChannelUserChannel` 结构：
+
+| 参数 | 类型 | 说明 |
+| -- | -- | -- |
+| type | `"feishu" \| "dingding"` | 通道类型 |
+| user_id | string | 通道用户 User ID |
+
+#### 导出通道用户 JSONL
+
+`GET /api/dip-studio/v1/channel-users/export`
+
+响应：`200 application/x-ndjson`
+
+返回通道用户 JSONL 文件流。
+
+#### 导入通道用户 JSONL
+
+`POST /api/dip-studio/v1/channel-users/import`
+
+请求体：`multipart/form-data`
+
+| 参数 | 类型 | 是否必填 | 说明 |
+| -- | -- | -- | -- |
+| file | binary | 是 | 上传的 JSONL 文件 |
+
+响应：`200 application/json`
+
+| 参数 | 类型 | 说明 |
+| -- | -- | -- |
+| count | integer | 成功导入的通道用户数量 |
+
+校验失败时会在错误详情中返回具体行号和原因；重复记录会明确提示为 `与前面记录重复：channel.user_id 已存在` 或 `与前面记录重复：displayName + channel.type 组合已存在`。
+
 #### 获取全局启用技能列表
 
 `GET /api/dip-studio/v1/skills`
@@ -818,6 +880,7 @@ DIP 数字员工 Web 界面
 | icon_id | string | 否 | 图标 ID |
 | soul | string | 否 | `SOUL.md` 内容 |
 | skills | string[] | 否 | 创建时要追加绑定的技能名称列表；后端会始终先绑定内置技能 `archive-protocol`、`schedule-plan`、`kweaver-core`，再追加该列表；重复值会按首次出现顺序去重。响应中 `skills` 为实际绑定的技能 id 列表 |
+| channel | ChannelConfig | 否 | 渠道配置；后端会通过 OpenClaw Gateway WebSocket RPC `config.get` 读取 parsed `config` 对象，更新后转为 `raw`，并通过 `config.set` 写回完整配置，不直接写入本机 `openclaw.json`，避免 `config.patch` / `config.apply` 触发网关重启；若同类型渠道中 AppID 已配置则返回 400 |
 
 响应：`201 application/json`
 
