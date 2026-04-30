@@ -1,0 +1,27 @@
+name: dip-frontend-build
+
+on:
+  push:
+    paths:
+      - "web/**"
+      - ".github/workflows/dip-frontend-build.yaml"
+      - ".github/workflows/reusable-build-service.yml"
+      - "VERSION"
+  workflow_dispatch:
+    inputs:
+      push_latest:
+        description: "Whether to also publish the latest tag"
+        required: false
+        default: "false"
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-service.yml
+    with:
+      service_name: dip-frontend
+      image_name: dip/dip-frontend
+      chart_dir: web/apps/dip/charts/dip-frontend
+      dockerfile: web/apps/dip/Dockerfile
+      build_context: web
+      push_latest: ${{ inputs.push_latest || 'false' }}
+    secrets: inherit

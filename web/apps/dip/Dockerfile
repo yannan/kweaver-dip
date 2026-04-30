@@ -1,3 +1,17 @@
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY tooling ./tooling
+COPY packages ./packages
+COPY apps/dip ./apps/dip
+
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @kweaver-web/dip build
+
 FROM acr.aishu.cn/public/nginx:1.22.1-alpine-latest
 
 # 给nginx添加权限（如果需要）
@@ -15,5 +29,4 @@ RUN chown root /usr/sbin/nginx && \
 EXPOSE 80
 
 COPY ci/nginx.conf /etc/nginx/conf.d/default.conf
-COPY dist /app/dist
-
+COPY --from=builder /app/apps/dip/dist /app/dist
