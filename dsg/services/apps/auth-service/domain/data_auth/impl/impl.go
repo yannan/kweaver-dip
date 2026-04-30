@@ -32,7 +32,7 @@ func NewDataAuth(
 
 func (u *useCase) DataResourceAuth(ctx context.Context, req *dto.DataResourceAuthReqArg) error {
 	//1. 检查申请资源是否存在, 补充资源信息
-	resources, err := u.dataModel.GetDataModelByID(ctx, req.ResourceID...)
+	resources, err := u.dataModel.GetDataModelByIDInternal(ctx, req.ResourceID...)
 	if err != nil {
 		return err
 	}

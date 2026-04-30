@@ -9,7 +9,7 @@ openapi_file_path = Path(__file__).parent / "openai"
 
 _raw_tool_box_configs = [
     {
-        "box_id": "78359920-25eb-4db5-91cb-5598e5db5542",
+        "box_id": "c5f6a6a3-6c3f-4b6b-bb1c-7f6d5b8e3a22",
         "box_name": "数据分析员工具",
         "box_desc": "包含数据分析工具，支持意图理解、问数、找数等功能",
         "metadata_type": "openapi",
@@ -20,7 +20,7 @@ _raw_tool_box_configs = [
         "content_type": "application/json",
     },
     {
-        "box_id": "0a14ba57-5102-43a6-9836-f7be0fd44e48",
+        "box_id": "8a2d1b7e-0d5a-4e63-9b3c-6f4e2a1d9c77",
         "box_name": "数据理解工具箱",
         "box_desc": "数据理解 kweaver",
         "metadata_type": "openapi",

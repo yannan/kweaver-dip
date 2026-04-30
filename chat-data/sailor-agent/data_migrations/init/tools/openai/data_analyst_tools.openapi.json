@@ -694,7 +694,7 @@
                             },
                             "type": "array"
                           },
-                          "detail": {
+                          "task": {
                             "type": "string"
                           },
                           "id": {
@@ -1806,7 +1806,7 @@
                             },
                             "type": "array"
                           },
-                          "detail": {
+                          "task": {
                             "type": "string"
                           },
                           "id": {
