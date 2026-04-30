@@ -16,5 +16,5 @@ FROM nginx:1.28.1-alpine
 
 EXPOSE 80
 
-COPY ci/nginx.conf /etc/nginx/conf.d/default.conf
+COPY apps/dip/ci/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/apps/dip/dist /app/dist
