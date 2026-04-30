@@ -21,6 +21,7 @@ argument-hint: [数据任务描述，可包含 kn_id、时间范围、指标口�
 
 - 问数：[`references/smart-ask-data.md`](references/smart-ask-data.md)
 - 找数：[`references/smart-search-tables.md`](references/smart-search-tables.md)
+- 权限申请：[`references/smart-apply-data-auth.md`](references/smart-apply-data-auth.md)
 - 报告：[`references/smart-reporting.md`](references/smart-reporting.md)
 - 图表数据：[`references/smart-json2plot.md`](references/smart-json2plot.md)
 - 数据洞察：[`references/smart-data-insights.md`](references/smart-data-insights.md)（含归因子场景 [`references/attribution_analysis.md`](references/attribution_analysis.md)）
@@ -34,6 +35,8 @@ argument-hint: [数据任务描述，可包含 kn_id、时间范围、指标口�
 2. 根据用户意图路由到：
    - `smart-search-tables`：找表/找视图/找字段/找职责
    - `smart-ask-data`：问数（第 10 步按查询类型分流执行；仅 `complex_query` 走 SQL，返回数据结果与口径）
+   - `smart-apply-data-auth`：为指定数据视图申请 `data_query`/`view_detail` 权限
+   - `smart-json2plot`：画图数据转换（仅消费上游结构化数据，不新增取数）
    - `smart-data-interpretation`（`data_interpretation`）：基于既有取数结果做趋势/异常/贡献/建议解读（不新增取数）
    - `smart-reporting`：将既有找数/问数/归因结果组装为可复核报告（不新增取数）
    - `smart-data-insights`：当用户要求「解读数据/趋势/异常/贡献/建议」或「多角度/多维度/分布」或「对比/同比/环比」或「归因/根因/为什么/MECE 证据链」等时使用；若用户同轮要求 **归因分析报告** 书面终态，须在洞察（含归因子场景）交付证据包后 **同轮** 衔接 `smart-reporting`（`attribution_analysis_report`）。
@@ -60,6 +63,8 @@ argument-hint: [数据任务描述，可包含 kn_id、时间范围、指标口�
 目标：确认当前环境可执行 KWeaver 命令。
 
 - 检查 `kweaver` 是否安装可用（如 `kweaver --version` 可正常返回）。
+- 版本门槛：`kweaver` 版本必须满足 `>= 0.7.2`。
+- 若版本低于 `0.7.2`：立即停止后续流程，并明确提示用户先升级 `kweaver` 到 `0.7.2` 或更高版本后再继续。
 - 若未安装或不可用：立即告知用户先安装/修复，再停止后续路由。
 - 若同一会话前文已确认通过：可跳过重复检测，并输出第 1 步“已校验通过（复用前文结果）”。
 
@@ -82,20 +87,31 @@ argument-hint: [数据任务描述，可包含 kn_id、时间范围、指标口�
 
 - **模糊问题澄清（必须执行）**：若同一问题可同时落入“问数/找数/其他”中的多个意图，或关键信息不足以唯一判定路由，必须先向用户发起澄清问题；在用户确认前不得进入任一子流程。
 - **路由优先级（关键，必须遵守）**：当同一请求同时包含「取数」与「洞察/解读」诉求时，**优先路由到 `smart-data-insights`**（其内部再按 smart-ask-data 第 7～11 步完成取数），不得仅因为出现“查/统计/汇总/多少”等词就路由到 `smart-ask-data`。
-- **数据洞察**（当用户要求「解读数据/趋势/异常/贡献/建议」或「多角度/多维度/分布」或「对比/同比/环比」或「归因/根因/为什么/驱动因素/MECE 证据链」等；尤其出现“重新取数/查一下再解读/基于最新数据解读”等）→ 路由到 `smart-data-insights`（启用 [`references/attribution_analysis.md`](references/attribution_analysis.md) 等对应子场景模板）
+- **趋势/对比/同环比默认问数路由（新增，必须遵守）**：当用户问题属于**趋势/对比/同比/环比**查询，且**未明确提出**“解读/分析/异常说明/建议/归因”等洞察型输出时，必须优先路由到 `smart-ask-data`（按问数流程执行，不进入 `smart-data-insights`）。
+- **画图优先级约束（必须遵守）**：当同一请求同时出现“画图”与任一数据主意图（找数 / 问数 / 数据洞察 / 报告）时，必须先按数据主意图路由；仅当用户问题**只包含画图意图**、且不包含找数/问数/洞察/报告意图时，才可直接路由到 `smart-json2plot`。
+- **数据洞察**（当用户要求「解读数据/趋势/异常/贡献/建议」或「多角度/多维度/分布」或「对比/同比/环比的分析解读」或「归因/根因/为什么/驱动因素/MECE 证据链」等；尤其出现“重新取数/查一下再解读/基于最新数据解读”等）→ 路由到 `smart-data-insights`（启用 [`references/attribution_analysis.md`](references/attribution_analysis.md) 等对应子场景模板）
 - **问数**（仅取数：查多少、明细、汇总、统计；且用户**不要求**解读/趋势/异常/贡献/建议等洞察型输出）→ 路由到 `smart-ask-data`
+- **冲突判定示例（同环比）**：  
+  - 示例 A：「查询企业数量同环比」/「给我同环比数据表」→ 仅取数，路由 `smart-ask-data`。  
+  - 示例 B：「查询企业数量同环比，并分析原因/给建议」→ 取数 + 洞察，路由 `smart-data-insights`。  
+  - 示例 C：「先查同环比，再解读趋势异常」→ 按优先级进入 `smart-data-insights`（其内完成取数并输出洞察）。
+  - 示例 D：「查询企业数量趋势」→ 未要求洞察，路由 `smart-ask-data`。  
+  - 示例 E：「只要A与B对比结果」→ 未要求洞察，路由 `smart-ask-data`。  
+  - 示例 F：「查询企业数量趋势，并分析异常原因」→ 取数 + 洞察，路由 `smart-data-insights`。  
 - **找数**（找表、找字段、找视图、找职责）→ 路由到 `smart-search-tables`
 - **报告**（基于已有找数/问数/归因交付写标准报告）→ 路由到 `smart-reporting`
+- **画图**（用户仅要求“把已有结构化数据转换为图表数据”，且不含找数/问数/洞察/报告意图）→ 路由到 `smart-json2plot`（参考 [`references/smart-json2plot.md`](references/smart-json2plot.md)）
 - **其他**（超边界/非数据任务）→ 返回边界说明或转普通对话，不强行进入子技能
-- **问数前：日期及区间合法性（仅当本步已明确路由为问数时执行）**：在**进入第 4 步、衔接 `smart-ask-data` 之前**，若用户问题中**已出现或可唯一定义**的**公历日期或日期区间**（自然语言如「某年某月某日」「A 到 B」等），须先做**日历合法性**校核。若出现**不存在的月日、不存在的公历日**（如 13 月、非闰年的 2 月 29 日等，按公历规则判定）或**区间不合法**（上界早于下界、开闭与业务冲突且无法自洽等），**立即终止**总入口后续步，**不得**进入子流程，并向用户**点名无效处**及**建议改法**；在日期/区间**无法识别为需要校验**时，可不在此步作实质校核。本步是问数在平台侧的**首道**日期门闸，与 `smart-ask-data` 第 10 步查询数据校验**配合**（`simple_detail`/`simple_aggregation`/`complex_query`，见 [`references/smart-ask-data.md`](references/smart-ask-data.md) 第 10 步）。
+- **问数前：日期及区间合法性（仅当本步已明确路由为问数时执行）**：在**进入第 4 步、衔接 `smart-ask-data` 之前**，若用户问题中**已出现或可唯一定义**的**公历日期或日期区间**（自然语言如「某年某月某日」「A 到 B」等），须先做**日历合法性**校核。若出现**不存在的月日、不存在的公历日**（如 13 月、非闰年的 2 月 29 日等，按公历规则判定）或**区间不合法**（上界早于下界、开闭与业务冲突且无法自洽等），**立即终止**总入口后续步，**不得**进入子流程，并向用户**点名无效处**及**建议改法**；在日期/区间**无法识别为需要校验**时，可不在此步作实质校核。本步是问数在平台侧的**首道**日期门闸，与 `smart-ask-data` 第 10 步查询数据校验**配合**（`dsl_query`/`metric_aggregation`/`complex_query`，`simple_aggregation` 为兼容别名；见 [`references/smart-ask-data.md`](references/smart-ask-data.md) 第 10 步）。  
 
 ### 4) 子流程衔接（序号连续）
 
 目标：将总入口门禁与子流程门禁打通，避免重复编号和跳号。
 
 - 总入口固定执行到第 4 步（完成路由）。
-- 路由到 `smart-ask-data` 时，继续执行其第 5-13 步。
-- 路由到 `smart-search-tables` 时，继续执行其第 5-11 步。
+- 路由到 `smart-ask-data` 时，继续执行其第 5-11 步（第 5 步为“检查知识网络”）。
+  - 问数第 5 步知识网络校验要求：`kn_id_ask_data`（明细条件查询）为必校验；`kn_id_metric`（指标聚合/同环比）仅在命中指标分支时必校验。命中分支所需网络需通过 `kweaver bkn get` 后再进入第 6 步。
+- 路由到 `smart-search-tables` 时，继续执行其第 5-10 步（第 5 步为“确认知识网络”，第 6 步使用 `kweaver context-loader query-object-instance <知识网络id> <查询命令>`）。
 - 路由到 `smart-data-interpretation`（或 `data_interpretation`）时：**令 S 为进入解读前已完成的最后一步编号**，继续执行 **7** 个解读步，全局为 **第 S+1 步至第 S+7 步**（不得固定写死为第 5–11 步）。
 - 路由到 `smart-data-insights` 时：**令 S 为进入解读前已完成的最后一步编号**，继续执行 **7** 个解读步，全局为 **第 S+1 步至第 S+7 步**（不得固定写死为第 5–11 步）。常见：仅总入口后自备证据直解读（S=4）→ 第 5–11 步；接找数完结（S=11）→ 第 12–18 步；接问数完结（S=13）→ 第 14–20 步。
 - 路由到 `smart-reporting` 时：**令 S 为进入报告前已完成的最后一步编号**，继续执行 **6** 个报告步，全局为 **第 S+1 步至第 S+6 步**（不得固定写死为第 5–10 步）。常见：接问数完结（S=13）→ 第 14–19 步；接找数完结（S=11）→ 第 12–17 步；仅总入口后自备证据直出报告（S=4）→ 第 5–10 步。
@@ -159,7 +175,7 @@ argument-hint: [数据任务描述，可包含 kn_id、时间范围、指标口�
 
 ### 4) 数据洞察分支（`smart-data-insights`）
 
-当用户要求「解读数据/趋势/异常/贡献/建议」或「多角度/多维度/分布」或「对比/同比/环比」或「归因/根因/为什么/MECE 证据链」等**洞察型输出**时进入该分支：
+当用户要求「解读数据/趋势/异常/贡献/建议」或「多角度/多维度/分布」或「对比/同比/环比的分析解读」或「归因/根因/为什么/MECE 证据链」等**洞察型输出**时进入该分支：
 
 - **需要取数（默认）**：用户未提供可复核的问数交付物，或明确要求“重新取数/查一下再解读/基于库里最新数据解读”等 → 路由到 `smart-data-insights`（其内部按新版 `smart-ask-data` 第 7～11 步完成取数，再按模板合成洞察；归因子场景见 [`references/attribution_analysis.md`](references/attribution_analysis.md)）。
 - **不取数（仅消费输入）**：用户已提供 `smart-ask-data` 最终交付原文（每段含 kn_id、原样 SQL、原样结果、最小口径），或已提供与 `attribution_analysis_report` 输入契约一致的**归因证据包**，且明确“不再新取数/不要重新查库/仅基于以下结果…” → 仍路由到 `smart-data-insights`，走其**模式 B**降级路径。
@@ -172,17 +188,18 @@ argument-hint: [数据任务描述，可包含 kn_id、时间范围、指标口�
 
 交付形态：标准报告框架（口径、证据、结论、限制、下一步），仅复用输入证据，不新增取数。
 
+### 6) 画图分支（`smart-json2plot`）
+
+当用户仅要求将**已有结构化数据**转换为图表数据（柱状图/饼图/折线图/散点图），且不包含找数、问数、洞察、报告意图时进入该分支。
+
+交付形态：Markdown + 标识符的图表数据对象（不执行查询、不直接出图，参考 `references/smart-json2plot.md`）。
+
 ## 📋 任务进度清单（阶段：总控制台）
 
 - [ ] 待完成 · 步骤一（环境检测）
 - [ ] 待完成 · 步骤二（配置检查）
-- [ ] 待完成 · 步骤三（意图路由）
-- [ ] 待完成 · 步骤四（问数场景日期与区间合法性校核）
-- [ ] 待完成 · 步骤五（路由到子流程并衔接连续编号）
-- [ ] 待完成 · 步骤六（连续步号校验）
-- [ ] 待完成 · 步骤七（子流程覆盖校验）
-- [ ] 待完成 · 步骤八（子流程完成态校验）
-- [ ] 待完成 · 步骤九（最终结果返回）
+- [ ] 待完成 · 步骤三（意图路由，含问数场景日期与区间合法性校核）
+- [ ] 待完成 · 步骤四（路由到子流程并衔接连续编号）
 
 ## 典型调用
 

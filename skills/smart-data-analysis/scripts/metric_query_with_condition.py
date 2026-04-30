@@ -33,23 +33,108 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import ssl
 import sys
+import urllib.error
+import urllib.request
 from typing import Any
+from urllib.parse import urlencode
 
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-WORKSPACE_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", "..", ".."))
-TESTS_DIR = os.path.join(WORKSPACE_ROOT, "tests")
-if TESTS_DIR not in sys.path:
-    sys.path.insert(0, TESTS_DIR)
+DEFAULT_BASE_URL = "https://192.168.40.63"
 
-from metric_api_common import (  # noqa: E402
-    DEFAULT_BASE_URL,
-    append_query,
-    build_metric_headers,
-    default_execute_base_url,
-    http_request,
-    print_response,
-)
+
+def default_execute_base_url() -> str:
+    return (
+        os.environ.get("ONTOLOGY_QUERY_BASE_URL")
+        or os.environ.get("KWEAVER_BASE_URL")
+        or DEFAULT_BASE_URL
+    ).rstrip("/")
+
+
+def append_query(url: str, params: dict[str, Any]) -> str:
+    q: dict[str, Any] = {}
+    for key, value in params.items():
+        if value is None or value == "":
+            continue
+        if isinstance(value, bool):
+            q[key] = str(value).lower()
+        else:
+            q[key] = value
+    if not q:
+        return url
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}{urlencode(q)}"
+
+
+def build_metric_headers(
+    *,
+    account_id: str = "",
+    account_type: str = "",
+    kn_id: str = "",
+    kn_id_header: str = "",
+    business_domain: str = "",
+    bearer: str = "",
+) -> dict[str, str]:
+    headers: dict[str, str] = {"Accept": "application/json"}
+    aid = (account_id or os.environ.get("X_ACCOUNT_ID") or "").strip()
+    if aid:
+        headers["x-account-id"] = aid
+    at = (account_type or os.environ.get("X_ACCOUNT_TYPE") or "").strip()
+    if at:
+        headers["x-account-type"] = at
+    kn = (kn_id_header or kn_id or os.environ.get("X_KN_ID") or "").strip()
+    if kn:
+        headers["x-kn-id"] = kn
+    bd = (business_domain or os.environ.get("KWEAVER_BUSINESS_DOMAIN") or "").strip()
+    if bd:
+        headers["x-business-domain"] = bd
+    tok = (bearer or os.environ.get("KWEAVER_TOKEN") or "").strip()
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    return headers
+
+
+def http_request(
+    url: str,
+    *,
+    method: str = "GET",
+    headers: dict[str, str],
+    body: dict[str, Any] | None = None,
+    timeout: float = 120.0,
+    insecure: bool = False,
+) -> tuple[int, str, str]:
+    data: bytes | None = None
+    req_headers = dict(headers)
+    if body is not None:
+        req_headers.setdefault("Content-Type", "application/json")
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method=method.upper(), headers=req_headers)
+    ctx = ssl._create_unverified_context() if insecure else None
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            return 0, raw, ""
+    except urllib.error.HTTPError as exc:
+        err_body = exc.read().decode("utf-8", errors="replace")
+        return 1, "", f"HTTP {exc.code} {exc.reason}\n{err_body}"
+    except urllib.error.URLError as exc:
+        return 1, "", f"Request failed: {exc.reason}"
+
+
+def print_response(raw: str, *, output_path: str | None, pretty: bool = True) -> None:
+    if output_path:
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(raw)
+        print(f"Wrote {len(raw)} bytes to {output_path}", file=sys.stderr)
+        return
+    if pretty:
+        try:
+            obj = json.loads(raw)
+            print(json.dumps(obj, ensure_ascii=False, indent=2))
+            return
+        except json.JSONDecodeError:
+            pass
+    print(raw)
 
 DEFAULT_KN_ID = os.environ.get("KN_ID", "d7lj3i54g3h4iis9fubg")
 DEFAULT_METRIC_ID = os.environ.get("METRIC_ID", "d7nidst4g3h4iis9fur0")
